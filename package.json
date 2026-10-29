@@ -1,0 +1,21 @@
+{
+  "name": "pharmacy-standalone",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "install:all": "npm install && npm install --prefix web",
+    "build:web": "npm run build --prefix web",
+    "db:migrate:local": "wrangler d1 migrations apply pharmacy-db --local",
+    "db:migrate:remote": "wrangler d1 migrations apply pharmacy-db --remote",
+    "dev:api": "wrangler dev --local --port 8787",
+    "dev:web": "npm run dev --prefix web",
+    "deploy": "npm run build:web && wrangler deploy",
+    "test:api": "node scripts/smoke-test.mjs"
+  },
+  "dependencies": {
+    "hono": "^4.6.0"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

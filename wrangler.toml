@@ -1,0 +1,19 @@
+name = "pharmacy-standalone"
+main = "worker/src/index.js"
+compatibility_date = "2025-01-01"
+
+[assets]
+directory = "./web/dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "pharmacy-db"
+database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+migrations_dir = "worker/migrations"
+
+# Secrets are NOT stored here. Set the JWT secret with:
+#   npx wrangler secret put JWT_SECRET
+# For local development put JWT_SECRET=... in a file named .dev.vars
