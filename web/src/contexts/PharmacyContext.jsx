@@ -14,14 +14,32 @@ export function PharmacyProvider({ children, user }) {
     }
   });
   const [pharmacyList, setPharmacyList] = useState([]);
+  const [loading, setLoading] = useState(isSystemOwner);
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    if (isSystemOwner) {
-      get('/owner/pharmacies')
-        .then(data => setPharmacyList(data.pharmacies || []))
-        .catch(err => console.error('Failed to load pharmacies:', err));
+    if (!user) {
+      console.warn('PharmacyContext: user is undefined');
+      setError('User not initialized');
+      setLoading(false);
+      return;
     }
-  }, [isSystemOwner]);
+    if (isSystemOwner) {
+      setLoading(true);
+      get('/owner/pharmacies')
+        .then(data => {
+          setPharmacyList(data.pharmacies || []);
+          setError('');
+        })
+        .catch(err => {
+          console.error('Failed to load pharmacies:', err);
+          setError(err.message || 'Failed to load pharmacies');
+        })
+        .finally(() => setLoading(false));
+    } else {
+      setLoading(false);
+    }
+  }, [isSystemOwner, user]);
 
   const switchPharmacy = useCallback((id) => {
     setSelectedPharmacyId(id);
@@ -47,7 +65,9 @@ export function PharmacyProvider({ children, user }) {
       selectedPharmacyId, 
       pharmacyList, 
       switchPharmacy,
-      refreshPharmacies
+      refreshPharmacies,
+      loading,
+      error
     }}>
       {children}
     </PharmacyContext.Provider>

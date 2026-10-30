@@ -181,17 +181,23 @@ function StaffForm({ staff, pharmacyList, onClose, onDone }) {
             ))}
           </select>
         </Field>
-        <Field label="Assign to Pharmacy">
-          <select 
-            value={f.assigned_pharmacy_id || ''} 
-            onChange={(e) => setF({ ...f, assigned_pharmacy_id: e.target.value ? parseInt(e.target.value) : null })}
-          >
-            <option value="">Select pharmacy...</option>
-            {pharmacyList.map(p => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
-          </select>
-        </Field>
+        {f.role !== 'owner' ? (
+          <Field label="Assign to Pharmacy">
+            <select 
+              value={f.assigned_pharmacy_id || ''} 
+              onChange={(e) => setF({ ...f, assigned_pharmacy_id: e.target.value ? parseInt(e.target.value) : null })}
+            >
+              <option value="">Select pharmacy...</option>
+              {pharmacyList.map(p => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          </Field>
+        ) : (
+          <div className="full" style={{ padding: '10px', background: '#f0f9ff', border: '1px solid #0ea5e9', borderRadius: 4, fontSize: 14 }}>
+            ℹ️ Owners manage all pharmacies and are not assigned to a specific location
+          </div>
+        )}
         <Field label="Registration No." hint="For pharmacists">
           <input value={f.reg_no || ''} onChange={set('reg_no')} />
         </Field>

@@ -4,21 +4,27 @@
     {
       "severity": "MEDIUM",
       "file": "components/PharmacySwitcher.jsx",
-      "issue": "PharmacySwitcher stores selection but doesn't filter any view. selectedPharmacyId is persisted to localStorage and provided by context, but no component reads it to filter API calls or UI. The switcher dropdown changes state without changing what the user sees.",
-      "suggestion": "Either wire selectedPharmacyId to backend endpoints that accept pharmacy_id parameter, or add a visual indicator (e.g., disabled state or tooltip) clarifying that filtering is not yet functional."
+      "issue": "PharmacySwitcher stores selection but doesn't filter any view - selectedPharmacyId is persisted to localStorage but no component reads it to filter API calls or UI",
+      "suggestion": "Either wire it to backend endpoints that accept pharmacy_id parameter, or add UI indicator that it's non-functional until backend support is added"
     },
     {
       "severity": "LOW",
       "file": "pages/StaffManagement.jsx",
-      "issue": "Password field in StaffForm uses autoComplete=\"new-password\" unconditionally. On edit mode (when password is optional), this may cause browsers to incorrectly prompt to save a blank password or suggest a new password when the user only wanted to change other fields.",
-      "suggestion": "Make autocomplete conditional: autoComplete={f.id ? \"off\" : \"new-password\"} or omit it entirely on edit mode."
+      "issue": "Password field in StaffForm uses unconditional autocomplete=\"new-password\" even in edit mode when the field is optional",
+      "suggestion": "Use conditional autocomplete: autoComplete={f.id ? \"off\" : \"new-password\"} to prevent browser password save prompts on edit forms"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "pages/StaffManagement.jsx",
+      "issue": "StaffForm allows assigning pharmacy to owner role - pharmacy assignment dropdown renders even when role could be 'owner', but owners should not be assigned to specific pharmacies in multi-pharmacy setup",
+      "suggestion": "Disable or hide the pharmacy assignment dropdown when f.role === 'owner', or show helper text explaining owners are not pharmacy-specific"
     },
     {
       "severity": "LOW",
       "file": "contexts/PharmacyContext.jsx",
-      "issue": "PharmacyContext logs a warning when user is missing but continues to render with isSystemOwner=false and empty pharmacyList. Downstream consumers of usePharmacy() have no way to distinguish 'not a system owner' from 'context failed to initialize'.",
-      "suggestion": "Consider exposing an error or loading field from the context to signal initialization failure, or return early with a fallback provider state when user is undefined."
+      "issue": "PharmacyContext missing fallback for undefined user - logs warning but continues with isSystemOwner=false and empty pharmacyList, making it impossible to distinguish initialization failure from non-system-owner",
+      "suggestion": "Add loading or error state to the context return value to allow consumers to handle initialization failure explicitly"
     }
   ],
-  "reviewDoc": "c:\\dev\\pharmacy-standalone\\.agents\\tasks\\multi-pharmacy-owner\\2025-01-15-084500-review.md"
+  "reviewDoc": "c:\\dev\\pharmacy-standalone\\.agents\\tasks\\multi-pharmacy-owner\\review.md"
 }
