@@ -1,8 +1,9 @@
-import { get } from '../api.js';
+import { get, qs } from '../api.js';
 import { KES, num, fmtDate, daysUntil, METHOD_LABEL, ROLE_LABEL } from '../util.js';
 import { PageHead, Spinner, ErrorBox, useLoad, Empty, Badge, Tabs } from '../ui.jsx';
 import { useState } from 'react';
 import { NotificationCenter } from '../components/NotificationCenter.jsx';
+import { usePharmacy } from '../contexts/PharmacyContext.jsx';
 
 // Dashboard component showing pharmacy overview
 function Bars({ rows }) {
@@ -19,11 +20,14 @@ function Bars({ rows }) {
 }
 
 export default function Dashboard({ user, go }) {
-  const d = useLoad(() => get('/dashboard'));
+  const { selectedPharmacyId } = usePharmacy() || {};
+  const queryString = qs({ pharmacy_id: selectedPharmacyId || '' });
+  
+  const d = useLoad(() => get('/dashboard' + queryString), [selectedPharmacyId]);
   const canStock = user.role !== 'cashier';
-  const a = useLoad(() => (canStock ? get('/stock/alerts') : Promise.resolve(null)));
-  const expiry = useLoad(() => get('/expiry-alerts').catch(() => ({ summary: { expired: 0, critical: 0, warning: 0, total: 0 }, alerts: [] })), []);
-  const stockAlerts = useLoad(() => get('/stock-alerts').catch(() => ({ summary: { out_of_stock: 0, critical: 0, low: 0, total: 0 }, alerts: [] })), []);
+  const a = useLoad(() => (canStock ? get('/stock/alerts' + queryString) : Promise.resolve(null)), [selectedPharmacyId]);
+  const expiry = useLoad(() => get('/expiry-alerts' + queryString).catch(() => ({ summary: { expired: 0, critical: 0, warning: 0, total: 0 }, alerts: [] })), [selectedPharmacyId]);
+  const stockAlerts = useLoad(() => get('/stock-alerts' + queryString).catch(() => ({ summary: { out_of_stock: 0, critical: 0, low: 0, total: 0 }, alerts: [] })), [selectedPharmacyId]);
   const [topTab, setTopTab] = useState('day');
   const [expTab, setExpTab] = useState('d30');
   const [showNotifications, setShowNotifications] = useState(false);

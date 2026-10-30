@@ -204,7 +204,7 @@ function StaffForm({ staff, pharmacyList, onClose, onDone }) {
             type="password" 
             value={f.password} 
             onChange={set('password')} 
-            autoComplete="new-password"
+            autoComplete={f.id ? "off" : "new-password"}
             required={!f.id}
             minLength={8}
           />

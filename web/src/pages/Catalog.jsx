@@ -2,16 +2,18 @@ import { useRef, useState } from 'react';
 import { get, post, put, qs } from '../api.js';
 import { KES, num, fmtDate, CLASS_LABEL, packsText, toCSV, download, parseCSV, eatTime, getStockStatus } from '../util.js';
 import { PageHead, Spinner, ErrorBox, useLoad, useDebounced, Empty, Badge, Modal, Field, useToast } from '../ui.jsx';
+import { usePharmacy } from '../contexts/PharmacyContext.jsx';
 
 const BLANK = { brand_name: '', generic_name: '', strength: '', dosage_form: 'Tablet', pack_size: 1, unit_name: 'pack', allow_split: false, category: '', manufacturer: '', barcode: '', drug_class: 'OTC', storage: '', buying_price: '', selling_price: '', vat_applicable: false, reorder_level: 10, preferred_supplier_id: '', notes: '' };
 const classBadge = (c) => <Badge kind={c === 'CONTROLLED' ? 'bad' : c === 'POM' ? 'info' : c === 'PHARMACY_ONLY' ? 'warn' : 'gray'}>{CLASS_LABEL[c]}</Badge>;
 
 export default function Catalog({ user }) {
+  const { selectedPharmacyId } = usePharmacy() || {};
   const canEdit = user.role === 'owner' || user.role === 'pharmacist';
   const toast = useToast();
   const [search, setSearch] = useState(''); const [cls, setCls] = useState(''); const [showInactive, setShowInactive] = useState(false);
   const dq = useDebounced(search);
-  const r = useLoad(() => get('/drugs' + qs({ q: dq, class: cls, active: showInactive ? 'all' : '', limit: 500 })), [dq, cls, showInactive]);
+  const r = useLoad(() => get('/drugs' + qs({ q: dq, class: cls, active: showInactive ? 'all' : '', limit: 500, pharmacy_id: selectedPharmacyId || '' })), [dq, cls, showInactive, selectedPharmacyId]);
   const [edit, setEdit] = useState(null); const [view, setView] = useState(null); const [importing, setImporting] = useState(false);
   const drugs = r.data?.drugs || [];
   

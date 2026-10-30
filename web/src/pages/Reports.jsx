@@ -2,8 +2,10 @@ import { useState } from 'react';
 import { get, post, qs } from '../api.js';
 import { KES, num, fmtDate, eatTime, todayEAT, addDaysStr, METHOD_LABEL, toCSV, toExcel, download, downloadExcel } from '../util.js';
 import { PageHead, Spinner, ErrorBox, useLoad, Empty, Badge, Tabs, Modal, Field, useToast } from '../ui.jsx';
+import { usePharmacy } from '../contexts/PharmacyContext.jsx';
 
 export default function Reports({ user, pharmacy }) {
+  const { selectedPharmacyId } = usePharmacy() || {};
   const mgmt = user.role !== 'cashier';
   const tabs = [{ id: 'daily', label: 'Daily cash-up' }, ...(mgmt ? [{ id: 'profit', label: 'Profit' }, { id: 'valuation', label: 'Stock value' }, { id: 'movers', label: 'Fast & slow movers' }, { id: 'controlled', label: 'Controlled drugs register' }, { id: 'payables', label: 'Supplier balances' }, { id: 'debtors', label: 'Customer debts' }] : [])];
   const [tab, setTab] = useState('daily');
@@ -14,8 +16,8 @@ export default function Reports({ user, pharmacy }) {
       </PageHead>
       <Tabs tabs={tabs} value={tab} onChange={setTab} />
       <div className="report-print-head"><h2>{pharmacy.name}</h2><div>{pharmacy.address} {pharmacy.licence_no && `· PPB licence ${pharmacy.licence_no}`} {pharmacy.kra_pin && `· PIN ${pharmacy.kra_pin}`}</div></div>
-      {tab === 'daily' && <Daily />}{tab === 'profit' && <Profit />}{tab === 'valuation' && <Valuation />}{tab === 'movers' && <Movers />}
-      {tab === 'controlled' && <Controlled pharmacy={pharmacy} />}{tab === 'payables' && <Payables />}{tab === 'debtors' && <Debtors />}
+      {tab === 'daily' && <Daily selectedPharmacyId={selectedPharmacyId} />}{tab === 'profit' && <Profit selectedPharmacyId={selectedPharmacyId} />}{tab === 'valuation' && <Valuation selectedPharmacyId={selectedPharmacyId} />}{tab === 'movers' && <Movers selectedPharmacyId={selectedPharmacyId} />}
+      {tab === 'controlled' && <Controlled pharmacy={pharmacy} selectedPharmacyId={selectedPharmacyId} />}{tab === 'payables' && <Payables selectedPharmacyId={selectedPharmacyId} />}{tab === 'debtors' && <Debtors selectedPharmacyId={selectedPharmacyId} />}
     </>
   );
 }
@@ -23,9 +25,9 @@ export default function Reports({ user, pharmacy }) {
 const Range = ({ from, to, setFrom, setTo }) => <div className="toolbar"><input type="date" style={{ width: 170 }} value={from} onChange={(e) => setFrom(e.target.value)} aria-label="From" /><span>to</span><input type="date" style={{ width: 170 }} value={to} onChange={(e) => setTo(e.target.value)} aria-label="To" />
   {[['Today', 0], ['7 days', 6], ['30 days', 29]].map(([l, n]) => <button key={l} className="btn sm" onClick={() => { setFrom(addDaysStr(todayEAT(), -n)); setTo(todayEAT()); }}>{l}</button>)}</div>;
 
-function Daily() {
+function Daily({ selectedPharmacyId }) {
   const [date, setDate] = useState(todayEAT());
-  const r = useLoad(() => get('/reports/daily' + qs({ date })), [date]);
+  const r = useLoad(() => get('/reports/daily' + qs({ date, pharmacy_id: selectedPharmacyId || '' })), [date, selectedPharmacyId]);
   const x = r.data;
   const methods = {}; x?.byMethod.forEach((m) => { (methods[m.cashier] ||= {})[m.method] = m.total; });
   const grand = x?.byCashier.reduce((s, c) => s + c.total, 0) || 0;
@@ -38,9 +40,9 @@ function Daily() {
       {x.voided.n > 0 && <p className="sub">Voided or refunded: {x.voided.n} sale(s), {KES(x.voided.total)}</p>}</>}</div>;
 }
 
-function Profit() {
+function Profit({ selectedPharmacyId }) {
   const [from, setFrom] = useState(addDaysStr(todayEAT(), -29)); const [to, setTo] = useState(todayEAT()); const [group, setGroup] = useState('drug');
-  const r = useLoad(() => get('/reports/profit' + qs({ from, to, group })), [from, to, group]); const x = r.data;
+  const r = useLoad(() => get('/reports/profit' + qs({ from, to, group, pharmacy_id: selectedPharmacyId || '' })), [from, to, group, selectedPharmacyId]); const x = r.data;
   const profitCols = [{ label: 'Item', key: 'label' }, { label: 'Units', key: 'units' }, { label: 'Revenue', key: 'revenue' }, { label: 'Cost', key: 'cost' }, { label: 'Profit', key: 'profit' }];
   return <div className="card"><Range {...{ from, to, setFrom, setTo }} /><div className="toolbar"><select value={group} onChange={(e) => setGroup(e.target.value)} aria-label="Group by"><option value="drug">By drug</option><option value="category">By category</option><option value="day">By day</option></select>
     <button className="btn sm" disabled={!x?.rows.length} onClick={() => download('profit.csv', toCSV(x.rows, profitCols))}>⬇ CSV</button>
@@ -51,8 +53,8 @@ function Profit() {
         {x.rows.map((p) => <tr key={p.label}><td>{p.label}</td><td className="r">{num(p.units)}</td><td className="r mono">{KES(p.revenue)}</td><td className="r mono">{KES(p.cost)}</td><td className="r mono"><strong>{KES(p.profit)}</strong></td><td className="r">{p.revenue ? Math.round((p.profit / p.revenue) * 100) + '%' : '—'}</td></tr>)}</tbody></table></div>}</>}</div>;
 }
 
-function Valuation() {
-  const r = useLoad(() => get('/reports/stock-valuation')); const x = r.data;
+function Valuation({ selectedPharmacyId }) {
+  const r = useLoad(() => get('/reports/stock-valuation' + qs({ pharmacy_id: selectedPharmacyId || '' })), [selectedPharmacyId]); const x = r.data;
   const valuationCols = [{ label: 'Drug', value: (d) => d.brand_name + ' ' + (d.strength || '') }, { label: 'Units', key: 'units' }, { label: 'Cost value', key: 'cost_value' }, { label: 'Retail value', key: 'retail_value' }];
   return <div className="card"><div className="card-head"><h3>Stock value on hand</h3><div>
     <button className="btn sm" disabled={!x?.rows.length} onClick={() => download('stock-valuation.csv', toCSV(x.rows, valuationCols))}>⬇ CSV</button>
@@ -63,15 +65,15 @@ function Valuation() {
       <div className="table-wrap"><table><thead><tr><th>Drug</th><th className="r">Units</th><th className="r">Cost value</th><th className="r">Retail value</th></tr></thead><tbody>{x.rows.map((d) => <tr key={d.id}><td>{d.brand_name} {d.strength}</td><td className="r">{num(d.units)}</td><td className="r mono">{KES(d.cost_value)}</td><td className="r mono">{KES(d.retail_value)}</td></tr>)}</tbody></table></div></>)}</div>;
 }
 
-function Movers() {
-  const r = useLoad(() => get('/reports/movers?days=30')); const x = r.data;
+function Movers({ selectedPharmacyId }) {
+  const r = useLoad(() => get('/reports/movers' + qs({ days: 30, pharmacy_id: selectedPharmacyId || '' })), [selectedPharmacyId]); const x = r.data;
   return <div className="grid g2"><div className="card"><h3>Fast movers (last 30 days)</h3><ErrorBox error={r.error} retry={r.reload} />{r.loading && !x ? <Spinner /> : x?.fast.length === 0 ? <Empty icon="📈" title="No sales yet" /> : <div className="table-wrap"><table><thead><tr><th>Drug</th><th className="r">Units sold</th><th className="r">Revenue</th></tr></thead><tbody>{x?.fast.map((d) => <tr key={d.id}><td>{d.brand_name} {d.strength}</td><td className="r">{num(d.units)}</td><td className="r mono">{KES(d.revenue)}</td></tr>)}</tbody></table></div>}</div>
     <div className="card"><h3>Dead stock (no sale in 90 days)</h3>{r.loading && !x ? <Spinner /> : x?.dead.length === 0 ? <Empty icon="✅" title="No dead stock" /> : <div className="table-wrap"><table><thead><tr><th>Drug</th><th className="r">Units</th><th className="r">Tied up (cost)</th><th>Last sold</th></tr></thead><tbody>{x?.dead.map((d) => <tr key={d.id}><td>{d.brand_name} {d.strength}</td><td className="r">{num(d.stock_units)}</td><td className="r mono">{KES(d.cost_value)}</td><td>{d.last_sold ? eatTime(d.last_sold, false) && fmtDate(d.last_sold.slice(0, 10)) : 'Never'}</td></tr>)}</tbody></table></div>}</div></div>;
 }
 
-function Controlled({ pharmacy }) {
+function Controlled({ pharmacy, selectedPharmacyId }) {
   const [from, setFrom] = useState(addDaysStr(todayEAT(), -29)); const [to, setTo] = useState(todayEAT()); const [drug, setDrug] = useState('');
-  const r = useLoad(() => get('/reports/controlled' + qs({ from, to, drug_id: drug })), [from, to, drug]); const x = r.data;
+  const r = useLoad(() => get('/reports/controlled' + qs({ from, to, drug_id: drug, pharmacy_id: selectedPharmacyId || '' })), [from, to, drug, selectedPharmacyId]); const x = r.data;
   const controlledCols = [{ label: 'Date', key: 'entry_date' }, { label: 'Drug', value: (e) => e.brand_name + ' ' + (e.strength || '') }, { label: 'Batch', key: 'batch_no' }, { label: 'In/Out', key: 'direction' }, { label: 'Quantity', key: 'qty_units' }, { label: 'Balance', key: 'balance_units' }, { label: 'Patient', key: 'patient_name' }, { label: 'Phone', key: 'patient_phone' }, { label: 'Prescriber', key: 'prescriber_name' }, { label: 'Facility', key: 'prescriber_facility' }, { label: 'Dispensed by', key: 'user_name' }, { label: 'Approved by', key: 'approved_by_name' }, { label: 'Note', key: 'note' }];
   return <div className="card"><div className="card-head"><h3>Controlled drugs register</h3></div>
     <div className="report-print-head"><div>Superintendent pharmacist: {pharmacy.superintendent_name} {pharmacy.superintendent_reg_no && `(${pharmacy.superintendent_reg_no})`}</div></div>
@@ -84,15 +86,15 @@ function Controlled({ pharmacy }) {
           <td>{e.patient_name}<div className="sub">{e.patient_phone}</div></td><td>{e.prescriber_name}<div className="sub">{e.prescriber_facility}</div></td><td>{e.user_name}{e.approved_by_name && <div className="sub">Approved: {e.approved_by_name}</div>}</td><td className="sub">{e.note}</td></tr>)}</tbody></table></div>}</div>;
 }
 
-function Payables() {
-  const r = useLoad(() => get('/reports/payables')); const x = r.data;
+function Payables({ selectedPharmacyId }) {
+  const r = useLoad(() => get('/reports/payables' + qs({ pharmacy_id: selectedPharmacyId || '' })), [selectedPharmacyId]); const x = r.data;
   return <div className="card"><h3>Supplier balances (what we owe)</h3><ErrorBox error={r.error} retry={r.reload} />{r.loading && !x ? <Spinner /> : x?.rows.length === 0 ? <Empty icon="✅" title="No unpaid deliveries" /> : <><div className="warnbox">Total owed to suppliers: {KES(x?.total)}</div>
     <div className="table-wrap"><table><thead><tr><th>Supplier</th><th>Invoice</th><th>Date</th><th className="r">Total</th><th className="r">Paid</th><th className="r">Balance</th></tr></thead><tbody>{x?.rows.map((d) => <tr key={d.id}><td>{d.supplier_name || '—'}</td><td>{d.invoice_no}</td><td>{fmtDate(d.delivery_date)}</td><td className="r mono">{KES(d.total_cost)}</td><td className="r mono">{KES(d.amount_paid)}</td><td className="r mono"><strong>{KES(d.balance)}</strong></td></tr>)}</tbody></table></div></>}</div>;
 }
 
-function Debtors() {
+function Debtors({ selectedPharmacyId }) {
   const toast = useToast();
-  const r = useLoad(() => get('/customers?debtors=1')); const rows = r.data?.customers || [];
+  const r = useLoad(() => get('/customers' + qs({ debtors: 1, pharmacy_id: selectedPharmacyId || '' })), [selectedPharmacyId]); const rows = r.data?.customers || [];
   const [pay, setPay] = useState(null); const [f, setF] = useState({ amount: '', method: 'cash', reference: '' }); const [err, setErr] = useState('');
   const save = async () => { setErr(''); try { await post(`/customers/${pay.id}/payment`, { amount: Number(f.amount), method: f.method, reference: f.reference }); toast('Payment recorded'); setPay(null); r.reload(); } catch (e) { setErr(e.message); } };
   return <div className="card"><h3>Customers who owe money</h3><ErrorBox error={r.error} retry={r.reload} />{r.loading && !r.data ? <Spinner /> : rows.length === 0 ? <Empty icon="✅" title="Nobody owes the pharmacy" /> : <>

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { get, post, qs } from '../api.js';
 import { KES, num, eatTime, fmtDate, METHOD_LABEL, CLASS_LABEL, packsText, toCSV, download, todayEAT, addDaysStr } from '../util.js';
 import { PageHead, Spinner, ErrorBox, useLoad, useDebounced, Empty, Badge, Modal, Field, Confirm, useToast } from '../ui.jsx';
+import { usePharmacy } from '../contexts/PharmacyContext.jsx';
 
 const FILTERS = [
   ['all', 'All Sales'], ['today', 'Today'], ['week', 'Last 7 days'], ['month', 'This month'], ['range', 'Date range…'],
@@ -10,6 +11,7 @@ const FILTERS = [
 ];
 
 export default function Sales({ user, pharmacy }) {
+  const { selectedPharmacyId } = usePharmacy() || {};
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
   const [from, setFrom] = useState(addDaysStr(todayEAT(), -6));
@@ -20,13 +22,13 @@ export default function Sales({ user, pharmacy }) {
   const [openId, setOpenId] = useState(null);
   const dq = useDebounced(search);
   const staff = useLoad(() => (user.role === 'cashier' ? Promise.resolve(null) : get('/users')), []);
-  useEffect(() => setPage(1), [dq, filter, from, to, cashier]);
-  const list = useLoad(() => get('/sales' + qs({ q: dq, filter, from: filter === 'range' ? from : '', to: filter === 'range' ? to : '', cashier, page, page_size: 25 })), [dq, filter, from, to, cashier, page]);
+  useEffect(() => setPage(1), [dq, filter, from, to, cashier, selectedPharmacyId]);
+  const list = useLoad(() => get('/sales' + qs({ q: dq, filter, from: filter === 'range' ? from : '', to: filter === 'range' ? to : '', cashier, page, page_size: 25, pharmacy_id: selectedPharmacyId || '' })), [dq, filter, from, to, cashier, page, selectedPharmacyId]);
   const d = list.data;
   const pages = d ? Math.max(1, Math.ceil(d.total / d.pageSize)) : 1;
 
   const exportCsv = async () => {
-    const all = await get('/sales' + qs({ q: dq, filter, from: filter === 'range' ? from : '', to: filter === 'range' ? to : '', cashier, page: 1, page_size: 100 }));
+    const all = await get('/sales' + qs({ q: dq, filter, from: filter === 'range' ? from : '', to: filter === 'range' ? to : '', cashier, page: 1, page_size: 100, pharmacy_id: selectedPharmacyId || '' }));
     download('sales.csv', toCSV(all.sales, [
       { label: 'Sale no', key: 'sale_no' }, { label: 'Date (UTC)', key: 'sale_date' }, { label: 'Cashier', key: 'cashier_name' },
       { label: 'Customer', key: 'customer_name' }, { label: 'Items', key: 'items' }, { label: 'Total', key: 'total' },

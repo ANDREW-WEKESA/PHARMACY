@@ -2,10 +2,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { get, post, put, qs } from '../api.js';
 import { KES, num, fmtDate, daysUntil, eatTime, packsText, toCSV, download, todayEAT } from '../util.js';
 import { PageHead, Spinner, ErrorBox, useLoad, useDebounced, Empty, Badge, Modal, Field, Tabs, useToast } from '../ui.jsx';
+import { usePharmacy } from '../contexts/PharmacyContext.jsx';
 
 const REASONS = { damage: 'Damaged', expired: 'Expired / write-off', loss: 'Lost / missing', count_correction: 'Count correction', return_to_supplier: 'Return to supplier', customer_return: 'Customer return', other: 'Other' };
 
 export default function Stock({ user }) {
+  const { selectedPharmacyId } = usePharmacy() || {};
   const canManage = user.role === 'owner' || user.role === 'pharmacist';
   const [tab, setTab] = useState('levels');
   const tabs = [
@@ -16,21 +18,21 @@ export default function Stock({ user }) {
     <>
       <PageHead icon="📦" title="Stock Management" sub="Batches, expiry dates, deliveries and counts" />
       <Tabs tabs={tabs} value={tab} onChange={setTab} />
-      {tab === 'levels' && <Levels canManage={canManage} />}
-      {tab === 'receive' && <Receive />}
-      {tab === 'reorder' && <Reorder />}
-      {tab === 'adjust' && <Adjustments user={user} />}
-      {tab === 'take' && <StockTake canManage={canManage} />}
-      {tab === 'suppliers' && <Suppliers canManage={canManage} />}
+      {tab === 'levels' && <Levels canManage={canManage} selectedPharmacyId={selectedPharmacyId} />}
+      {tab === 'receive' && <Receive selectedPharmacyId={selectedPharmacyId} />}
+      {tab === 'reorder' && <Reorder selectedPharmacyId={selectedPharmacyId} />}
+      {tab === 'adjust' && <Adjustments user={user} selectedPharmacyId={selectedPharmacyId} />}
+      {tab === 'take' && <StockTake canManage={canManage} selectedPharmacyId={selectedPharmacyId} />}
+      {tab === 'suppliers' && <Suppliers canManage={canManage} selectedPharmacyId={selectedPharmacyId} />}
     </>
   );
 }
 
 /* ---------- levels ---------- */
-function Levels() {
+function Levels({ selectedPharmacyId }) {
   const [search, setSearch] = useState(''); const [status, setStatus] = useState('instock');
   const dq = useDebounced(search);
-  const r = useLoad(() => get('/stock' + qs({ q: dq, status })), [dq, status]);
+  const r = useLoad(() => get('/stock' + qs({ q: dq, status, pharmacy_id: selectedPharmacyId || '' })), [dq, status, selectedPharmacyId]);
   const rows = r.data?.batches || [];
   const exp = (b) => { const d = daysUntil(b.expiry_date); return d < 0 ? <Badge kind="bad">Expired {fmtDate(b.expiry_date)}</Badge> : d <= 30 ? <Badge kind="warn">{fmtDate(b.expiry_date)} · {d}d</Badge> : d <= 90 ? <Badge kind="info">{fmtDate(b.expiry_date)}</Badge> : <span>{fmtDate(b.expiry_date)}</span>; };
   return (
@@ -51,14 +53,14 @@ function Levels() {
 }
 
 /* ---------- receive delivery ---------- */
-function Receive() {
+function Receive({ selectedPharmacyId }) {
   const toast = useToast();
-  const sup = useLoad(() => get('/suppliers'));
-  const hist = useLoad(() => get('/deliveries'));
+  const sup = useLoad(() => get('/suppliers' + qs({ pharmacy_id: selectedPharmacyId || '' })), [selectedPharmacyId]);
+  const hist = useLoad(() => get('/deliveries' + qs({ pharmacy_id: selectedPharmacyId || '' })), [selectedPharmacyId]);
   const [form, setForm] = useState({ supplier_id: '', invoice_no: '', delivery_date: todayEAT(), amount_paid: '', notes: '' });
   const [lines, setLines] = useState([]);
   const [search, setSearch] = useState(''); const dq = useDebounced(search, 250);
-  const found = useLoad(() => (dq ? get('/drugs' + qs({ q: dq, limit: 8 })) : Promise.resolve({ drugs: [] })), [dq]);
+  const found = useLoad(() => (dq ? get('/drugs' + qs({ q: dq, limit: 8, pharmacy_id: selectedPharmacyId || '' })) : Promise.resolve({ drugs: [] })), [dq, selectedPharmacyId]);
   const [err, setErr] = useState(''); const [busy, setBusy] = useState(false);
   const add = (d) => { setLines((l) => [...l, { key: Math.random(), drug: d, batch_no: '', expiry_date: '', packs: '', loose_units: '', buying_price: d.buying_price, selling_price: d.selling_price }]); setSearch(''); };
   const upd = (i, k, v) => setLines((l) => l.map((x, n) => n === i ? { ...x, [k]: v } : x));
@@ -108,8 +110,8 @@ function Receive() {
 }
 
 /* ---------- reorder ---------- */
-function Reorder() {
-  const r = useLoad(() => get('/stock/alerts'));
+function Reorder({ selectedPharmacyId }) {
+  const r = useLoad(() => get('/stock/alerts' + qs({ pharmacy_id: selectedPharmacyId || '' })), [selectedPharmacyId]);
   const rows = useMemo(() => [...(r.data?.out || []), ...(r.data?.low || [])], [r.data]);
   const groups = useMemo(() => { const g = {}; rows.forEach((x) => { (g[x.supplier_name || 'No preferred supplier'] ||= []).push(x); }); return g; }, [rows]);
   const text = (name, items) => `Order request for ${name}\n` + items.map((i) => `- ${i.brand_name} ${i.strength || ''}: need about ${Math.max(1, Math.ceil((i.reorder_level * 2 - i.stock_units) / i.pack_size))} pack(s)`).join('\n');
@@ -130,9 +132,9 @@ function Reorder() {
 }
 
 /* ---------- adjustments ---------- */
-function Adjustments({ user }) {
+function Adjustments({ user, selectedPharmacyId }) {
   const toast = useToast();
-  const list = useLoad(() => get('/adjustments'));
+  const list = useLoad(() => get('/adjustments' + qs({ pharmacy_id: selectedPharmacyId || '' })), [selectedPharmacyId]);
   const [open, setOpen] = useState(false);
   return (
     <div className="card"><div className="card-head"><h3>Stock adjustments</h3><button className="btn primary sm" onClick={() => setOpen(true)}>+ New adjustment</button></div>
@@ -142,13 +144,13 @@ function Adjustments({ user }) {
           {list.data?.adjustments.map((a) => <tr key={a.id}><td>{eatTime(a.created_at)}</td><td>{a.brand_name} {a.strength}<div className="sub">Batch {a.batch_no}</div></td><td>{REASONS[a.reason]}</td>
             <td className="r mono" style={{ color: a.qty_change < 0 ? 'var(--bad)' : 'var(--ok)', fontWeight: 700 }}>{a.qty_change > 0 ? '+' : ''}{a.qty_change}</td><td>{a.user_name}</td><td>{a.note}{a.witness && <div className="sub">Witness: {a.witness}</div>}</td></tr>)}
         </tbody></table></div>}
-      {open && <AdjustForm user={user} onClose={() => setOpen(false)} onDone={() => { setOpen(false); toast('Adjustment saved'); list.reload(); }} />}
+      {open && <AdjustForm user={user} selectedPharmacyId={selectedPharmacyId} onClose={() => setOpen(false)} onDone={() => { setOpen(false); toast('Adjustment saved'); list.reload(); }} />}
     </div>
   );
 }
-function AdjustForm({ user, onClose, onDone }) {
+function AdjustForm({ user, selectedPharmacyId, onClose, onDone }) {
   const [search, setSearch] = useState(''); const dq = useDebounced(search, 250);
-  const found = useLoad(() => get('/stock' + qs({ q: dq, status: 'all' })), [dq]);
+  const found = useLoad(() => get('/stock' + qs({ q: dq, status: 'all', pharmacy_id: selectedPharmacyId || '' })), [dq, selectedPharmacyId]);
   const [batch, setBatch] = useState(null);
   const [f, setF] = useState({ reason: 'damage', qty: '', note: '', witness: '' });
   const [err, setErr] = useState(''); const [busy, setBusy] = useState(false);
@@ -179,9 +181,9 @@ function AdjustForm({ user, onClose, onDone }) {
 }
 
 /* ---------- stock take ---------- */
-function StockTake({ canManage }) {
+function StockTake({ canManage, selectedPharmacyId }) {
   const toast = useToast();
-  const list = useLoad(() => get('/stocktakes'));
+  const list = useLoad(() => get('/stocktakes' + qs({ pharmacy_id: selectedPharmacyId || '' })), [selectedPharmacyId]);
   const [openId, setOpenId] = useState(null);
   const start = async () => { try { const r = await post('/stocktakes'); setOpenId(r.id); list.reload(); } catch (e) { if (e.data?.id) setOpenId(e.data.id); else toast(e.message, 'err'); } };
   return (
@@ -223,9 +225,9 @@ function CountSheet({ id, canPost, onClose }) {
 }
 
 /* ---------- suppliers ---------- */
-function Suppliers({ canManage }) {
+function Suppliers({ canManage, selectedPharmacyId }) {
   const toast = useToast();
-  const r = useLoad(() => get('/suppliers'));
+  const r = useLoad(() => get('/suppliers' + qs({ pharmacy_id: selectedPharmacyId || '' })), [selectedPharmacyId]);
   const [edit, setEdit] = useState(null);
   const [pay, setPay] = useState(null);
   return (
