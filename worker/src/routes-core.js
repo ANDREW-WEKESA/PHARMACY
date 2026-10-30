@@ -33,23 +33,37 @@ app.post('/setup', async (c) => {
   const email = str(b.owner_email, 120).toLowerCase() || null;
   const phone = normPhone(str(b.owner_phone, 30)) || null;
   const password = String(b.password || '');
+  const isSystemOwner = b.is_system_owner ? 1 : 0;
   if (!name) throw bad('Enter the pharmacy\'s registered name.');
   if (!ownerName) throw bad('Enter the owner\'s name.');
   if (!email && !phone) throw bad('Enter an email or phone number for the owner to sign in with.');
   if (password.length < 8) throw bad('Password must be at least 8 characters.');
   const { hash, salt } = await hashPassword(password);
-  await c.env.DB.batch([
-    q.stmt(c.env.DB,
-      `INSERT INTO pharmacy (id,name,address,phone,email,kra_pin,licence_no,superintendent_name,superintendent_reg_no,mpesa_till)
-       VALUES (1,?,?,?,?,?,?,?,?,?)`,
-      name, str(b.address), normPhone(str(b.pharmacy_phone, 30)), str(b.pharmacy_email), str(b.kra_pin, 30),
-      str(b.licence_no, 60), str(b.superintendent_name), str(b.superintendent_reg_no, 60), str(b.mpesa_till, 30)),
-    q.stmt(c.env.DB,
-      `INSERT INTO users (name,email,phone,password_hash,password_salt,role) VALUES (?,?,?,?,?, 'owner')`,
-      ownerName, email, phone, hash, salt),
-  ]);
-  const user = await q.first(c.env.DB, 'SELECT id,name,email,phone,role FROM users WHERE role=\'owner\' ORDER BY id LIMIT 1');
-  await audit(c.env.DB, user, 'setup', 'pharmacy', 1, name);
+  
+  // Insert pharmacy first (without CHECK constraint, allowing auto-increment)
+  const pharmacyResult = await q.run(c.env.DB,
+    `INSERT INTO pharmacy (name,address,phone,email,kra_pin,licence_no,superintendent_name,superintendent_reg_no,mpesa_till,active)
+     VALUES (?,?,?,?,?,?,?,?,?,1)`,
+    name, str(b.address), normPhone(str(b.pharmacy_phone, 30)), str(b.pharmacy_email), str(b.kra_pin, 30),
+    str(b.licence_no, 60), str(b.superintendent_name), str(b.superintendent_reg_no, 60), str(b.mpesa_till, 30));
+  
+  const pharmacyId = pharmacyResult.meta.last_row_id;
+  
+  // Insert user with is_system_owner and assigned_pharmacy_id
+  const userResult = await q.run(c.env.DB,
+    `INSERT INTO users (name,email,phone,password_hash,password_salt,role,is_system_owner,assigned_pharmacy_id) 
+     VALUES (?,?,?,?,?,'owner',?,?)`,
+    ownerName, email, phone, hash, salt, isSystemOwner, pharmacyId);
+  
+  const userId = userResult.meta.last_row_id;
+  
+  // Update pharmacy with owner_user_id
+  await q.run(c.env.DB, 'UPDATE pharmacy SET owner_user_id=? WHERE id=?', userId, pharmacyId);
+  
+  const user = await q.first(c.env.DB, 
+    'SELECT id,name,email,phone,role,is_system_owner,assigned_pharmacy_id FROM users WHERE id=?', userId);
+  
+  await audit(c.env.DB, user, 'setup', 'pharmacy', pharmacyId, name);
   const token = await signJwt({ sub: user.id }, c.env.JWT_SECRET || 'dev-secret-key-change-in-production');
   return c.json({ token, user });
 });
@@ -66,7 +80,8 @@ app.post('/auth/login', async (c) => {
     `SELECT COUNT(*) n FROM audit_log WHERE action='login_failed' AND detail=? AND created_at>=?`, idRaw, since);
   if (fails.n >= 8) throw new HttpError(429, 'Too many failed attempts. Try again in 15 minutes.');
   const phone = normPhone(idRaw);
-  const u = await q.first(c.env.DB, 'SELECT * FROM users WHERE lower(email)=? OR phone=?', idRaw, phone);
+  const u = await q.first(c.env.DB, 
+    'SELECT * FROM users WHERE lower(email)=? OR phone=?', idRaw, phone);
   const ok = u && u.active && (await verifyPassword(password, u.password_hash, u.password_salt));
   if (!ok) {
     await audit(c.env.DB, null, 'login_failed', 'user', null, idRaw);
@@ -74,7 +89,30 @@ app.post('/auth/login', async (c) => {
   }
   await audit(c.env.DB, u, 'login', 'user', u.id, null);
   const token = await signJwt({ sub: u.id }, c.env.JWT_SECRET || 'dev-secret-key-change-in-production');
-  return c.json({ token, user: { id: u.id, name: u.name, email: u.email, phone: u.phone, role: u.role, reg_no: u.reg_no } });
+  
+  // Build response with owner fields
+  const userResponse = { 
+    id: u.id, 
+    name: u.name, 
+    email: u.email, 
+    phone: u.phone, 
+    role: u.role, 
+    reg_no: u.reg_no,
+    is_system_owner: u.is_system_owner || 0,
+    assigned_pharmacy_id: u.assigned_pharmacy_id || null
+  };
+  
+  // If system owner, fetch accessible pharmacies
+  if (u.is_system_owner) {
+    const accessiblePharmacies = await q.all(c.env.DB,
+      'SELECT id, name FROM pharmacy WHERE owner_user_id = ? AND active = 1 ORDER BY name',
+      u.id);
+    userResponse.accessible_pharmacies = accessiblePharmacies;
+  } else {
+    userResponse.accessible_pharmacies = [];
+  }
+  
+  return c.json({ token, user: userResponse });
 });
 
 app.get('/auth/me', async (c) => {

@@ -61,7 +61,7 @@ app.use('/api/*', async (c, next) => {
   try {
     const payload = await verifyJwt(token, c.env.JWT_SECRET || 'dev-secret-key-change-in-production');
     const user = await c.env.DB.prepare(
-      'SELECT id,name,email,phone,role,reg_no,active,pharmacy_id FROM users WHERE id=? AND active=1'
+      'SELECT id,name,email,phone,role,reg_no,active,pharmacy_id,is_system_owner,assigned_pharmacy_id FROM users WHERE id=? AND active=1'
     ).bind(payload.sub).first();
     
     if (!user) {
@@ -69,7 +69,22 @@ app.use('/api/*', async (c, next) => {
     }
     
     c.set('user', user);
-    c.set('pharmacy_id', user.pharmacy_id || 1);
+    
+    // Set pharmacy context based on owner status
+    if (user.is_system_owner) {
+      c.set('is_system_owner', true);
+      // System owners can query specific pharmacy via query param
+      const qpid = parseInt(c.req.query('pharmacy_id'));
+      if (qpid && !isNaN(qpid)) {
+        c.set('pharmacy_id', qpid);
+      } else {
+        c.set('pharmacy_id', null); // No default pharmacy for system owners
+      }
+    } else {
+      c.set('is_system_owner', false);
+      c.set('pharmacy_id', user.assigned_pharmacy_id || user.pharmacy_id || 1);
+    }
+    
     return next();
   } catch (err) {
     console.error('Auth error:', err);
