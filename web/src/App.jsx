@@ -10,8 +10,16 @@ import Catalog from './pages/Catalog.jsx';
 import Reports from './pages/Reports.jsx';
 import Settings from './pages/Settings.jsx';
 import { AuditLog } from './pages/AuditLog.jsx';
+import { PharmacyProvider } from './contexts/PharmacyContext.jsx';
+import { PharmacySwitcher } from './components/PharmacySwitcher.jsx';
+import OwnerDashboard from './pages/OwnerDashboard.jsx';
+import PharmacyManagement from './pages/PharmacyManagement.jsx';
+import StaffManagement from './pages/StaffManagement.jsx';
 
 const NAV = [
+  { id: 'owner-dashboard', label: 'Owner Dashboard', icon: '🏢', roles: ['owner'], requiresSystemOwner: true, C: OwnerDashboard },
+  { id: 'owner-pharmacies', label: 'My Pharmacies', icon: '🏪', roles: ['owner'], requiresSystemOwner: true, C: PharmacyManagement },
+  { id: 'owner-staff', label: 'All Staff', icon: '👥', roles: ['owner'], requiresSystemOwner: true, C: StaffManagement },
   { id: 'dashboard', label: 'Dashboard', icon: '📊', roles: ['owner', 'pharmacist', 'cashier'], C: Dashboard },
   { id: 'sales', label: 'Sales History', icon: '💊', roles: ['owner', 'pharmacist', 'cashier'], C: Sales },
   { id: 'stock', label: 'Stock Management', icon: '📦', roles: ['owner', 'pharmacist', 'stock_clerk'], C: Stock },
@@ -69,7 +77,7 @@ export default function App() {
 
 function Shell({ session, refreshSession, logout }) {
   const { user, pharmacy } = session;
-  const items = NAV.filter((n) => n.roles.includes(user.role));
+  const items = NAV.filter((n) => n.roles.includes(user.role) && (!n.requiresSystemOwner || user.is_system_owner));
   const fromHash = () => { const h = location.hash.replace('#/', ''); return items.some((i) => i.id === h) ? h : items[0].id; };
   const [page, setPage] = useState(fromHash);
   const [open, setOpen] = useState(false);
@@ -80,28 +88,34 @@ function Shell({ session, refreshSession, logout }) {
   useEffect(() => { document.title = pharmacy.name; }, [pharmacy.name]);
 
   return (
-    <div className="shell">
-      {open && <div className="scrim" onClick={() => setOpen(false)} />}
-      <aside className={'sidebar' + (open ? ' open' : '')}>
-        <div className="brand">
-          <div className="brand-logo">💊</div>
-          <h2>{pharmacy.name}</h2>
-          <small>Pharmacy Management System</small>
-        </div>
-        <nav className="nav" aria-label="Main">
-          {items.map((n) => <button key={n.id} className={page === n.id ? 'on' : ''} onClick={() => go(n.id)} aria-current={page === n.id ? 'page' : undefined}><span className="ico">{n.icon}</span>{n.label}</button>)}
-        </nav>
-        <div className="side-user">
-          <div className="avatar">{initials}</div>
-          <strong>{user.name}</strong>
-          <small>{ROLE_LABEL[user.role]}</small>
-          <button className="btn" onClick={logout}>🚪 Logout</button>
-        </div>
-      </aside>
-      <main className="main">
-        <div className="mobile-bar"><button onClick={() => setOpen(true)} aria-label="Open menu">☰</button>{pharmacy.name}</div>
-        <Cur key={page} user={user} pharmacy={pharmacy} go={go} refreshSession={refreshSession} />
-      </main>
-    </div>
+    <PharmacyProvider user={user}>
+      <div className="shell">
+        {open && <div className="scrim" onClick={() => setOpen(false)} />}
+        <aside className={'sidebar' + (open ? ' open' : '')}>
+          <div className="brand">
+            <div className="brand-logo">💊</div>
+            <h2>{pharmacy.name}</h2>
+            <small>Pharmacy Management System</small>
+          </div>
+          <nav className="nav" aria-label="Main">
+            {items.map((n) => <button key={n.id} className={page === n.id ? 'on' : ''} onClick={() => go(n.id)} aria-current={page === n.id ? 'page' : undefined}><span className="ico">{n.icon}</span>{n.label}</button>)}
+          </nav>
+          <div className="side-user">
+            <div className="avatar">{initials}</div>
+            <strong>{user.name}</strong>
+            <small>{ROLE_LABEL[user.role]}</small>
+            <button className="btn" onClick={logout}>🚪 Logout</button>
+          </div>
+        </aside>
+        <main className="main">
+          <div className="mobile-bar">
+            <button onClick={() => setOpen(true)} aria-label="Open menu">☰</button>
+            <span>{pharmacy.name}</span>
+            <PharmacySwitcher />
+          </div>
+          <Cur key={page} user={user} pharmacy={pharmacy} go={go} refreshSession={refreshSession} />
+        </main>
+      </div>
+    </PharmacyProvider>
   );
 }

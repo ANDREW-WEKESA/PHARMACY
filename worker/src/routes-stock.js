@@ -34,6 +34,8 @@ const STOCK_JOIN = `
 
 app.get('/drugs', async (c) => {
   const today = eatDate();
+  const is_system_owner = c.get('is_system_owner');
+  const pharmacy_id = c.get('pharmacy_id');
   const search = str(c.req.query('q'));
   const cls = str(c.req.query('class'));
   const active = c.req.query('active');
@@ -41,6 +43,19 @@ app.get('/drugs', async (c) => {
   const limit = Math.min(500, Math.max(1, int(c.req.query('limit'), 200)));
   const where = [];
   const args = [today, today, today];
+  
+  // Pharmacy filtering
+  if (is_system_owner) {
+    const filterPharmacy = int(c.req.query('pharmacy_id'));
+    if (filterPharmacy) {
+      where.push('d.pharmacy_id = ?');
+      args.push(filterPharmacy);
+    }
+  } else {
+    where.push('d.pharmacy_id = ?');
+    args.push(pharmacy_id);
+  }
+  
   if (active !== 'all') where.push('d.active = 1');
   if (search) {
     where.push('(d.brand_name LIKE ? OR d.generic_name LIKE ? OR d.barcode = ? OR d.category LIKE ?)');
@@ -109,14 +124,22 @@ const DRUG_COLS = ['brand_name', 'generic_name', 'strength', 'dosage_form', 'pac
   'preferred_supplier_id', 'notes'];
 
 app.post('/drugs', WRITE, async (c) => {
-  const pharmacy = await q.first(c.env.DB, 'SELECT * FROM pharmacy WHERE id=1');
+  const pharmacy_id = c.get('pharmacy_id');
+  const is_system_owner = c.get('is_system_owner');
+  
+  // System owners must have a pharmacy selected
+  if (is_system_owner && !pharmacy_id) {
+    throw bad('Please select a pharmacy before adding drugs.');
+  }
+  
+  const pharmacy = await q.first(c.env.DB, 'SELECT * FROM pharmacy WHERE id=?', pharmacy_id || 1);
   const d = cleanDrug(await body(c), pharmacy);
   if (d.barcode) {
-    const dup = await q.first(c.env.DB, 'SELECT id FROM drugs WHERE barcode=? AND active=1', d.barcode);
+    const dup = await q.first(c.env.DB, 'SELECT id FROM drugs WHERE barcode=? AND pharmacy_id=? AND active=1', d.barcode, pharmacy_id || 1);
     if (dup) throw new HttpError(409, 'Another drug already uses that barcode.');
   }
-  const r = await q.run(c.env.DB, `INSERT INTO drugs (${DRUG_COLS.join(',')}) VALUES (${DRUG_COLS.map(() => '?').join(',')})`,
-    ...DRUG_COLS.map((k) => d[k]));
+  const r = await q.run(c.env.DB, `INSERT INTO drugs (${DRUG_COLS.join(',')}, pharmacy_id) VALUES (${DRUG_COLS.map(() => '?').join(',')}, ?)`,
+    ...DRUG_COLS.map((k) => d[k]), pharmacy_id || 1);
   const id = r.meta.last_row_id;
   await q.run(c.env.DB, 'INSERT INTO price_history (drug_id,buying_price,selling_price,changed_by) VALUES (?,?,?,?)',
     id, d.buying_price, d.selling_price, c.get('user').id);
@@ -126,13 +149,15 @@ app.post('/drugs', WRITE, async (c) => {
 
 app.put('/drugs/:id', WRITE, async (c) => {
   const id = int(c.req.param('id'));
-  const old = await q.first(c.env.DB, 'SELECT * FROM drugs WHERE id=?', id);
+  const pharmacy_id = c.get('pharmacy_id');
+  const is_system_owner = c.get('is_system_owner');
+  const old = await q.first(c.env.DB, 'SELECT * FROM drugs WHERE id=? AND (pharmacy_id = ? OR ? = 1)', id, pharmacy_id, is_system_owner ? 1 : 0);
   if (!old) throw new HttpError(404, 'Drug not found');
-  const pharmacy = await q.first(c.env.DB, 'SELECT * FROM pharmacy WHERE id=1');
+  const pharmacy = await q.first(c.env.DB, 'SELECT * FROM pharmacy WHERE id=?', old.pharmacy_id);
   const b = await body(c);
   const d = cleanDrug(b, pharmacy, old);
   if (d.barcode) {
-    const dup = await q.first(c.env.DB, 'SELECT id FROM drugs WHERE barcode=? AND active=1 AND id<>?', d.barcode, id);
+    const dup = await q.first(c.env.DB, 'SELECT id FROM drugs WHERE barcode=? AND pharmacy_id=? AND active=1 AND id<>?', d.barcode, old.pharmacy_id, id);
     if (dup) throw new HttpError(409, 'Another drug already uses that barcode.');
   }
   const active = b.active == null ? old.active : b.active ? 1 : 0;
@@ -150,7 +175,14 @@ app.put('/drugs/:id', WRITE, async (c) => {
 
 // Bulk import: rows already parsed from CSV/Excel by the browser
 app.post('/drugs/import', WRITE, async (c) => {
-  const pharmacy = await q.first(c.env.DB, 'SELECT * FROM pharmacy WHERE id=1');
+  const pharmacy_id = c.get('pharmacy_id');
+  const is_system_owner = c.get('is_system_owner');
+  
+  if (is_system_owner && !pharmacy_id) {
+    throw bad('Please select a pharmacy before importing drugs.');
+  }
+  
+  const pharmacy = await q.first(c.env.DB, 'SELECT * FROM pharmacy WHERE id=?', pharmacy_id || 1);
   const b = await body(c);
   const rows = Array.isArray(b.rows) ? b.rows : [];
   if (!rows.length) throw bad('No rows to import.');
@@ -162,8 +194,8 @@ app.post('/drugs/import', WRITE, async (c) => {
     try {
       const d = cleanDrug(rows[i], pharmacy);
       const existing = await q.first(c.env.DB,
-        `SELECT * FROM drugs WHERE active=1 AND ((? IS NOT NULL AND barcode=?) OR (lower(brand_name)=lower(?) AND COALESCE(strength,'')=COALESCE(?,'')))`,
-        d.barcode, d.barcode, d.brand_name, d.strength);
+        `SELECT * FROM drugs WHERE pharmacy_id=? AND active=1 AND ((? IS NOT NULL AND barcode=?) OR (lower(brand_name)=lower(?) AND COALESCE(strength,'')=COALESCE(?,'')))`  ,
+        pharmacy_id || 1, d.barcode, d.barcode, d.brand_name, d.strength);
       if (existing) {
         const m = cleanDrug(rows[i], pharmacy, existing);
         stmts.push(c.env.DB.prepare(`UPDATE drugs SET ${DRUG_COLS.map((k) => k + '=?').join(',')} WHERE id=?`).bind(...DRUG_COLS.map((k) => m[k]), existing.id));
@@ -173,7 +205,7 @@ app.post('/drugs/import', WRITE, async (c) => {
         }
         updated++;
       } else {
-        stmts.push(c.env.DB.prepare(`INSERT INTO drugs (${DRUG_COLS.join(',')}) VALUES (${DRUG_COLS.map(() => '?').join(',')})`).bind(...DRUG_COLS.map((k) => d[k])));
+        stmts.push(c.env.DB.prepare(`INSERT INTO drugs (${DRUG_COLS.join(',')}, pharmacy_id) VALUES (${DRUG_COLS.map(() => '?').join(',')}, ?)`).bind(...DRUG_COLS.map((k) => d[k]), pharmacy_id || 1));
         stmts.push(c.env.DB.prepare('INSERT INTO price_history (drug_id,buying_price,selling_price,changed_by) VALUES ((SELECT MAX(id) FROM drugs),?,?,?)')
           .bind(d.buying_price, d.selling_price, c.get('user').id));
         created++;
@@ -189,17 +221,40 @@ app.post('/drugs/import', WRITE, async (c) => {
 
 // ---------- suppliers ----------
 app.get('/suppliers', async (c) => {
+  const is_system_owner = c.get('is_system_owner');
+  const pharmacy_id = c.get('pharmacy_id');
+  
+  let wherePharmacy = '';
+  const args = [];
+  if (is_system_owner) {
+    const filterPharmacy = int(c.req.query('pharmacy_id'));
+    if (filterPharmacy) {
+      wherePharmacy = 'WHERE s.pharmacy_id = ?';
+      args.push(filterPharmacy);
+    }
+  } else {
+    wherePharmacy = 'WHERE s.pharmacy_id = ?';
+    args.push(pharmacy_id);
+  }
+  
   const rows = await q.all(c.env.DB,
     `SELECT s.*, COALESCE((SELECT SUM(total_cost - amount_paid) FROM deliveries d WHERE d.supplier_id = s.id),0) balance
-     FROM suppliers s WHERE s.active=1 ORDER BY s.name`);
+     FROM suppliers s ${wherePharmacy} AND s.active=1 ORDER BY s.name`, ...args);
   return c.json({ suppliers: rows });
 });
 app.post('/suppliers', need('owner', 'pharmacist', 'stock_clerk'), async (c) => {
+  const pharmacy_id = c.get('pharmacy_id');
+  const is_system_owner = c.get('is_system_owner');
+  
+  if (is_system_owner && !pharmacy_id) {
+    throw bad('Please select a pharmacy before adding suppliers.');
+  }
+  
   const b = await body(c);
   const name = str(b.name, 120);
   if (!name) throw bad('Enter the supplier\'s name.');
-  const r = await q.run(c.env.DB, 'INSERT INTO suppliers (name,contact_person,phone,email,address) VALUES (?,?,?,?,?)',
-    name, str(b.contact_person) || null, str(b.phone, 30) || null, str(b.email) || null, str(b.address) || null);
+  const r = await q.run(c.env.DB, 'INSERT INTO suppliers (name,contact_person,phone,email,address,pharmacy_id) VALUES (?,?,?,?,?,?)',
+    name, str(b.contact_person) || null, str(b.phone, 30) || null, str(b.email) || null, str(b.address) || null, pharmacy_id || 1);
   await audit(c.env.DB, c.get('user'), 'supplier_created', 'supplier', r.meta.last_row_id, name);
   return c.json({ id: r.meta.last_row_id }, 201);
 });
@@ -243,23 +298,43 @@ app.get('/stock', async (c) => {
 // Low / out of stock and expiry summary (used by dashboard + reorder list)
 app.get('/stock/alerts', async (c) => {
   const today = eatDate();
-  const pharmacy = await q.first(c.env.DB, 'SELECT expiry_warn_days FROM pharmacy WHERE id=1');
+  const is_system_owner = c.get('is_system_owner');
+  const pharmacy_id = c.get('pharmacy_id');
+  
+  let wherePharmacy = '';
+  const args = [today, today, today];
+  if (is_system_owner) {
+    const filterPharmacy = int(c.req.query('pharmacy_id'));
+    if (filterPharmacy) {
+      wherePharmacy = ' AND d.pharmacy_id = ?';
+      args.push(filterPharmacy);
+    }
+  } else {
+    wherePharmacy = ' AND d.pharmacy_id = ?';
+    args.push(pharmacy_id);
+  }
+  
+  const pharmacy = await q.first(c.env.DB, 'SELECT expiry_warn_days FROM pharmacy WHERE id=?', pharmacy_id || 1);
   const low = await q.all(c.env.DB,
     `SELECT d.id, d.brand_name, d.strength, d.reorder_level, d.pack_size, d.preferred_supplier_id, sp.name supplier_name,
             COALESCE(s.units,0) stock_units
      FROM drugs d ${STOCK_JOIN} LEFT JOIN suppliers sp ON sp.id=d.preferred_supplier_id
-     WHERE d.active=1 AND COALESCE(s.units,0) <= d.reorder_level ORDER BY COALESCE(s.units,0), d.brand_name`, today, today, today);
+     WHERE d.active=1${wherePharmacy} AND COALESCE(s.units,0) <= d.reorder_level ORDER BY COALESCE(s.units,0), d.brand_name`, ...args);
   const buckets = {};
   for (const [k, days] of [['d30', 30], ['d60', 60], ['d90', 90]]) {
+    const bucketArgs = [today, eatDate(Date.now() + days * 86400000)];
+    if (wherePharmacy) bucketArgs.push(args[args.length - 1]);
     buckets[k] = await q.all(c.env.DB,
       `SELECT b.id batch_id, b.batch_no, b.expiry_date, b.qty_units, d.brand_name, d.strength
        FROM batches b JOIN drugs d ON d.id=b.drug_id
-       WHERE b.active=1 AND b.qty_units>0 AND b.expiry_date >= ? AND b.expiry_date <= ? ORDER BY b.expiry_date`,
-      today, eatDate(Date.now() + days * 86400000));
+       WHERE b.active=1 AND b.qty_units>0 AND b.expiry_date >= ? AND b.expiry_date <= ?${wherePharmacy} ORDER BY b.expiry_date`,
+      ...bucketArgs);
   }
+  const expiredArgs = [today];
+  if (wherePharmacy) expiredArgs.push(args[args.length - 1]);
   const expired = await q.all(c.env.DB,
     `SELECT b.id batch_id, b.batch_no, b.expiry_date, b.qty_units, d.brand_name, d.strength
-     FROM batches b JOIN drugs d ON d.id=b.drug_id WHERE b.active=1 AND b.qty_units>0 AND b.expiry_date < ? ORDER BY b.expiry_date`, today);
+     FROM batches b JOIN drugs d ON d.id=b.drug_id WHERE b.active=1 AND b.qty_units>0 AND b.expiry_date < ?${wherePharmacy} ORDER BY b.expiry_date`, ...expiredArgs);
   return c.json({ low: low.filter((r) => r.stock_units > 0), out: low.filter((r) => r.stock_units <= 0), buckets, expired,
     warnDays: pharmacy.expiry_warn_days });
 });

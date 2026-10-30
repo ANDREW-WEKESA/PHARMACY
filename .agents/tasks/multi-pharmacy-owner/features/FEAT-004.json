@@ -1,0 +1,46 @@
+{
+  "id": "FEAT-004",
+  "type": "feat",
+  "description": "Setup flow enhancement and end-to-end integration verification. Updates web/src/pages/AuthNew.jsx to include system owner checkbox during initial setup. Performs comprehensive integration testing: database migrations on local and remote, system owner setup flow, multi-pharmacy creation, staff assignment, data isolation verification, pharmacy switcher functionality, and production deployment. Ensures the complete multi-pharmacy system works correctly and existing single-pharmacy deployments remain functional.",
+  "status": "pending",
+  "steps": [
+    "Update web/src/pages/AuthNew.jsx setup section: In the setup form (around the pharmacy details section), add a checkbox field: <Field label=''><label><input type='checkbox' checked={form.is_system_owner} onChange={e => setForm({...form, is_system_owner: e.target.checked})} /> I manage multiple pharmacy locations</label></Field>. Below checkbox, show hint text if checked: {form.is_system_owner && <p className='hint'>You'll be able to add more pharmacies after setup from the Owner Dashboard.</p>}. Ensure form.is_system_owner is included in the POST /setup request body.",
+    "Test setup flow: npm run db:migrate:local (if not already run). npm run build:web && npm run dev:api. Navigate to http://localhost:8787 (fresh database, no setup). Fill setup form with checkbox 'I manage multiple pharmacy locations' CHECKED. Submit form. Verify user is created with is_system_owner = 1 in database. Verify first pharmacy is created with owner_user_id = user.id. Verify after login, owner dashboard is the default page and shows the first pharmacy in the list.",
+    "Test multi-pharmacy creation: As logged-in system owner, navigate to My Pharmacies page. Click Add Pharmacy button. Fill form with second pharmacy details (name: 'Branch Pharmacy', address, phone, etc.). Submit. Verify new pharmacy appears in list. Verify PharmacySwitcher dropdown now shows: All Pharmacies, [First Pharmacy Name], Branch Pharmacy. Repeat to create a third pharmacy 'Test Pharmacy'. Verify all three appear in switcher and pharmacy management list.",
+    "Test staff assignment and data isolation: Navigate to All Staff page. Click Add Staff. Create user: name 'Pharmacist Branch', email 'pharmacist@branch.test', phone '0712000001', role 'pharmacist', password 'testpass123'. Submit. User appears in table with 'Unassigned' pharmacy. Click Assign button on the new user. Select 'Branch Pharmacy' from dropdown, role 'pharmacist'. Submit. Verify user row now shows 'Assigned Pharmacy: Branch Pharmacy'. Logout. Login as pharmacist@branch.test with testpass123. Verify user sees standard pharmacist menu (NOT owner menu). Navigate to Drug Catalog. Add a test drug 'Branch Drug A'. Logout.",
+    "Test data isolation verification: Login as system owner. Navigate to Drug Catalog. Verify 'Branch Drug A' appears in list (system owner sees all). Use PharmacySwitcher to select 'Branch Pharmacy'. Verify 'Branch Drug A' still appears. Use PharmacySwitcher to select first pharmacy. Verify 'Branch Drug A' does NOT appear (belongs to different pharmacy). Switch back to 'All Pharmacies'. Add drug 'Main Drug X'. Use switcher to select 'Branch Pharmacy'. Verify 'Main Drug X' does NOT appear. Switch to first pharmacy. Verify 'Main Drug X' appears. This confirms pharmacy filtering is working correctly.",
+    "Test consolidated dashboard: As system owner with 'All Pharmacies' selected, navigate to Owner Dashboard. Verify Total Pharmacies shows 3. Verify pharmacy comparison table lists all three pharmacies. Create a test sale in Branch Pharmacy (switch context, navigate to Sales History, create sale if flow supports it, or use backend API directly). Return to Owner Dashboard. Verify Branch Pharmacy row shows updated sales_today value. Verify Combined Sales Today metric aggregates across all pharmacies.",
+    "Test existing single-pharmacy backward compatibility: Create a fresh local database (backup current, delete .wrangler folder, re-run npm run db:migrate:local). Run setup flow WITHOUT checking 'I manage multiple pharmacy locations'. Verify user is created with is_system_owner = 0. Verify user sees standard menu (Dashboard, Sales, Stock, etc.), NOT owner menu. Verify assigned_pharmacy_id = 1. Add drug, create sale. Verify all standard functionality works. This confirms existing deployments are not broken.",
+    "Run remote migration: Verify wrangler.toml has correct database_id for production. Run npm run db:migrate:remote. Verify migration 0003 applies successfully to production database. If migration fails, check error message, fix issues in migration SQL, and retry. Confirm production database schema matches local (PRAGMA table_info queries via wrangler d1 execute).",
+    "Deploy to production: Run npm run build:web to build frontend. Verify web/dist/ folder populated with build artifacts. Run npm run deploy. Wrangler will deploy Worker with new backend code and updated frontend. Verify deployment succeeds with no errors. Note the production URL from Wrangler output. Open production URL in browser. Test complete flow on production: Setup with system owner checkbox (or login if already set up), create pharmacy, assign staff, test data isolation, verify consolidated dashboard, test pharmacy switcher.",
+    "Integration verification checklist: ✅ Local migration runs without errors. ✅ Remote migration runs without errors. ✅ Setup flow with system owner checkbox works. ✅ Multiple pharmacies can be created. ✅ Staff can be assigned to specific pharmacies. ✅ Data isolation confirmed (pharmacy A staff cannot see pharmacy B data). ✅ System owner can switch pharmacy context via PharmacySwitcher. ✅ Consolidated dashboard aggregates metrics correctly. ✅ Owner routes require system owner role (403 for non-owners). ✅ Backward compatibility confirmed (single pharmacy setup still works). ✅ Production deployment successful and tested. Document any issues found during testing in findings field."
+  ],
+  "acceptance_criteria": [
+    "AuthNew.jsx setup form includes 'I manage multiple pharmacy locations' checkbox that sets is_system_owner on user",
+    "System owner setup creates user with is_system_owner=1 and first pharmacy with owner_user_id set correctly",
+    "Multiple pharmacies can be created and appear in PharmacySwitcher dropdown",
+    "Staff can be assigned to specific pharmacies via StaffManagement page",
+    "Data isolation verified: users only see data from their assigned pharmacy (or all pharmacies for system owner)",
+    "System owner can switch between 'All Pharmacies' and individual locations, filtering updates accordingly",
+    "Owner Dashboard displays correct consolidated metrics across all owned pharmacies",
+    "Backward compatibility confirmed: existing single-pharmacy deployments work without modification",
+    "Database migrations run successfully on both local and remote (production) environments",
+    "Production deployment completes successfully and all features work on live URL"
+  ],
+  "verification": [
+    "npm run db:migrate:local completes with no errors",
+    "npm run db:migrate:remote completes with no errors and 0003 migration applied to production",
+    "Setup flow: check checkbox, submit, verify user.is_system_owner=1 in database",
+    "Create 3 pharmacies via My Pharmacies page, verify all appear in PharmacySwitcher",
+    "Create staff user and assign to pharmacy 2, verify assigned_pharmacy_id=2",
+    "Login as pharmacy 2 staff, add drug, logout, login as system owner with pharmacy 1 filter, verify drug NOT visible",
+    "As system owner, view Owner Dashboard with All Pharmacies selected, verify metrics aggregate across all locations",
+    "Test pharmacy switcher changes filter context: select pharmacy 2, navigate to Drug Catalog, verify only pharmacy 2 drugs appear",
+    "Fresh database test: setup WITHOUT system owner checkbox, verify standard single-pharmacy behavior (no owner menu)",
+    "Production deployment: npm run deploy succeeds, open live URL, test login and basic flows work",
+    "Security test: Login as regular user, try to access /api/owner/dashboard via browser dev tools or curl, verify 403 Forbidden",
+    "Performance check: With multiple pharmacies, verify dashboard and reports load in reasonable time (<3 seconds)"
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}

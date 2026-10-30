@@ -1,0 +1,31 @@
+{
+  "id": "FEAT-001",
+  "type": "feat",
+  "description": "Database schema migration and backend authentication middleware for multi-pharmacy owner support. Adds is_system_owner and assigned_pharmacy_id to users table, owner_user_id and active to pharmacy table, creates pharmacy_staff_assignments table, and updates auth middleware to set pharmacy context based on owner status. This establishes the data model foundation for multi-location management.",
+  "status": "completed",
+  "steps": [
+    "Create worker/migrations/0003_multi_pharmacy_owner.sql with: ALTER TABLE users ADD COLUMN is_system_owner INTEGER DEFAULT 0; ALTER TABLE users ADD COLUMN assigned_pharmacy_id INTEGER REFERENCES pharmacy(id); ALTER TABLE pharmacy ADD COLUMN owner_user_id INTEGER REFERENCES users(id); ALTER TABLE pharmacy ADD COLUMN active INTEGER DEFAULT 1; CREATE TABLE pharmacy_staff_assignments with columns id, user_id, pharmacy_id, role, can_manage_staff, created_at; CREATE INDEX idx_staff_assignments_user ON pharmacy_staff_assignments(user_id); CREATE INDEX idx_staff_assignments_pharmacy ON pharmacy_staff_assignments(pharmacy_id); UPDATE users SET assigned_pharmacy_id = 1 WHERE assigned_pharmacy_id IS NULL; UPDATE pharmacy SET active = 1 WHERE active IS NULL;",
+    "Update worker/src/index.js auth middleware (lines ~35-50): After fetching user, add SELECT query to include is_system_owner and assigned_pharmacy_id fields. Add logic: if user.is_system_owner, set c.set('is_system_owner', true) and c.set('pharmacy_id', null); else set c.set('is_system_owner', false) and c.set('pharmacy_id', user.assigned_pharmacy_id || 1). Support query param override: const qpid = parseInt(c.req.query('pharmacy_id')); if (is_system_owner && qpid) c.set('pharmacy_id', qpid).",
+    "Update worker/src/routes-core.js POST /setup (lines ~20-50): Accept b.is_system_owner boolean from request body. Remove CHECK(id = 1) constraint from pharmacy insert by modifying INSERT to let id auto-increment. After creating user, get the inserted user_id. Update the inserted pharmacy row: SET owner_user_id = user_id. Update the inserted user row: SET assigned_pharmacy_id = pharmacy_id. Return user object with is_system_owner and assigned_pharmacy_id fields.",
+    "Update worker/src/routes-core.js POST /auth/login (lines ~65-85): Modify user SELECT to include is_system_owner and assigned_pharmacy_id. If user.is_system_owner, fetch accessible_pharmacies: SELECT id, name FROM pharmacy WHERE owner_user_id = user.id AND active = 1 ORDER BY name. Return user object with is_system_owner, assigned_pharmacy_id, and accessible_pharmacies array in response.",
+    "Run npm run db:migrate:local to apply migration 0003. Query the database to confirm new columns exist: wrangler d1 execute pharmacy-db --local --command 'PRAGMA table_info(users)' and verify is_system_owner and assigned_pharmacy_id columns appear. Query PRAGMA table_info(pharmacy) to verify owner_user_id and active. Query SELECT name FROM sqlite_master WHERE type='table' AND name='pharmacy_staff_assignments' to confirm table created."
+  ],
+  "acceptance_criteria": [
+    "Migration 0003_multi_pharmacy_owner.sql exists and runs without errors locally",
+    "Database schema includes users.is_system_owner, users.assigned_pharmacy_id, pharmacy.owner_user_id, pharmacy.active, and pharmacy_staff_assignments table",
+    "Auth middleware in index.js sets is_system_owner and pharmacy_id context variables based on user status",
+    "POST /setup accepts is_system_owner flag and creates proper ownership relationships",
+    "POST /auth/login returns is_system_owner, assigned_pharmacy_id, and accessible_pharmacies for system owners",
+    "Existing single-pharmacy setup continues to work (backward compatibility maintained)"
+  ],
+  "verification": [
+    "npm run db:migrate:local completes successfully",
+    "wrangler d1 execute pharmacy-db --local --command \"PRAGMA table_info(users)\" shows is_system_owner and assigned_pharmacy_id columns",
+    "wrangler d1 execute pharmacy-db --local --command \"SELECT name FROM sqlite_master WHERE type='table' AND name='pharmacy_staff_assignments'\" returns the table name",
+    "npm run dev:api starts without errors",
+    "Test POST /setup with {is_system_owner: true, ...} creates user with is_system_owner=1 and pharmacy with owner_user_id set",
+    "Test POST /auth/login returns user object with is_system_owner and accessible_pharmacies fields for system owner"
+  ],
+  "blocked_reason": null,
+  "findings": "Successfully implemented multi-pharmacy owner database schema and authentication. Migration 0003 adds is_system_owner and assigned_pharmacy_id to users table, owner_user_id and active to pharmacy table, and creates pharmacy_staff_assignments table. Auth middleware now sets pharmacy context based on owner status with query param override support. POST /setup accepts is_system_owner flag and creates proper ownership relationships. POST /auth/login returns is_system_owner, assigned_pharmacy_id, and accessible_pharmacies array for system owners. All tests passed. Backward compatibility maintained for existing single-pharmacy deployments."
+}

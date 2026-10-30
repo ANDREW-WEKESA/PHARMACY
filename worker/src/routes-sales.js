@@ -15,7 +15,15 @@ app.post('/sales', SELLERS, async (c) => {
   const db = c.env.DB;
   const user = c.get('user');
   const b = await body(c);
-  const pharmacy = await q.first(db, 'SELECT * FROM pharmacy WHERE id=1');
+  const pharmacy_id = c.get('pharmacy_id');
+  const is_system_owner = c.get('is_system_owner');
+  
+  // System owners must select a pharmacy
+  if (is_system_owner && !pharmacy_id) {
+    throw bad('Please select a pharmacy before creating a sale.');
+  }
+  
+  const pharmacy = await q.first(db, 'SELECT * FROM pharmacy WHERE id=?', pharmacy_id || 1);
   const today = eatDate();
 
   const cart = Array.isArray(b.items) ? b.items : [];
@@ -40,7 +48,7 @@ app.post('/sales', SELLERS, async (c) => {
   let needsPrescription = false, hasControlled = false;
   const drugs = new Map();
   for (const [drugId, units] of want) {
-    const drug = await q.first(db, 'SELECT * FROM drugs WHERE id=? AND active=1', drugId);
+    const drug = await q.first(db, 'SELECT * FROM drugs WHERE id=? AND active=1 AND pharmacy_id=?', drugId, pharmacy_id || 1);
     if (!drug) throw bad('One of the drugs in the cart is no longer available.');
     drugs.set(drugId, drug);
     if (units % drug.pack_size !== 0 && !drug.allow_split) {
@@ -144,14 +152,14 @@ app.post('/sales', SELLERS, async (c) => {
   // ---- sale number (unique constraint protects against races) ----
   const saleNo = 'S-' + pad6(pharmacy.receipt_counter + 1);
   const stmts = [
-    db.prepare('UPDATE pharmacy SET receipt_counter = receipt_counter + 1 WHERE id=1 AND receipt_counter = ?').bind(pharmacy.receipt_counter),
+    db.prepare('UPDATE pharmacy SET receipt_counter = receipt_counter + 1 WHERE id=? AND receipt_counter = ?').bind(pharmacy_id || 1, pharmacy.receipt_counter),
     db.prepare(
       `INSERT INTO sales (sale_no,cashier_id,customer_id,customer_name,customer_phone,subtotal,discount,vat,total,amount_paid,balance_due,
-         has_prescription,has_controlled,approved_by,prescriber_name,prescriber_facility,prescription_date,discount_reason)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+         has_prescription,has_controlled,approved_by,prescriber_name,prescriber_facility,prescription_date,discount_reason,pharmacy_id)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
       .bind(saleNo, user.id, customerId, custName || null, custPhone || null, subtotal, discount, vat, total, paid, balanceDue,
         needsPrescription ? 1 : 0, hasControlled ? 1 : 0, approverId, str(rx.prescriber_name, 120) || null,
-        str(rx.prescriber_facility, 120) || null, isDate(rx.prescription_date) ? rx.prescription_date : null, discountReason || null),
+        str(rx.prescriber_facility, 120) || null, isDate(rx.prescription_date) ? rx.prescription_date : null, discountReason || null, pharmacy_id || 1),
   ];
   const SALE_ID = '(SELECT id FROM sales WHERE sale_no=?)';
   const balances = new Map();
@@ -197,12 +205,27 @@ app.post('/sales', SELLERS, async (c) => {
 // ---------- list sales (Sales History screen) ----------
 app.get('/sales', async (c) => {
   const user = c.get('user');
+  const is_system_owner = c.get('is_system_owner');
+  const pharmacy_id = c.get('pharmacy_id');
   const search = str(c.req.query('q'));
   const filter = str(c.req.query('filter')) || 'all';
   const page = Math.max(1, int(c.req.query('page'), 1));
   const pageSize = Math.min(100, Math.max(5, int(c.req.query('page_size'), 25)));
   const where = [];
   const args = [];
+
+  // Pharmacy filtering
+  if (is_system_owner) {
+    const filterPharmacy = int(c.req.query('pharmacy_id'));
+    if (filterPharmacy) {
+      where.push('s.pharmacy_id = ?');
+      args.push(filterPharmacy);
+    }
+    // If no filter, show all owned pharmacies (implemented via query)
+  } else {
+    where.push('s.pharmacy_id = ?');
+    args.push(pharmacy_id);
+  }
 
   if (user.role === 'cashier') { where.push('s.cashier_id = ?'); args.push(user.id); }
   else if (int(c.req.query('cashier'))) { where.push('s.cashier_id = ?'); args.push(int(c.req.query('cashier'))); }
@@ -241,16 +264,18 @@ app.get('/sales', async (c) => {
 // ---------- one sale (receipt / detail) ----------
 app.get('/sales/:id', async (c) => {
   const user = c.get('user');
+  const is_system_owner = c.get('is_system_owner');
+  const pharmacy_id = c.get('pharmacy_id');
   const s = await q.first(c.env.DB,
     `SELECT s.*, u.name cashier_name, a.name approver_name, v.name voided_by_name
      FROM sales s JOIN users u ON u.id=s.cashier_id LEFT JOIN users a ON a.id=s.approved_by LEFT JOIN users v ON v.id=s.voided_by
-     WHERE s.id=?`, int(c.req.param('id')));
+     WHERE s.id=? AND (s.pharmacy_id = ? OR ? = 1)`, int(c.req.param('id')), pharmacy_id, is_system_owner ? 1 : 0);
   if (!s || (user.role === 'cashier' && s.cashier_id !== user.id)) throw new HttpError(404, 'Sale not found');
   const items = await q.all(c.env.DB,
     `SELECT i.*, b.batch_no, b.expiry_date, d.pack_size, d.unit_name FROM sale_items i
      JOIN batches b ON b.id=i.batch_id JOIN drugs d ON d.id=i.drug_id WHERE i.sale_id=? ORDER BY i.id`, s.id);
   const payments = await q.all(c.env.DB, 'SELECT * FROM payments WHERE sale_id=? ORDER BY id', s.id);
-  const pharmacy = await q.first(c.env.DB, 'SELECT * FROM pharmacy WHERE id=1');
+  const pharmacy = await q.first(c.env.DB, 'SELECT * FROM pharmacy WHERE id=?', s.pharmacy_id);
   return c.json({ sale: s, items, payments, pharmacy });
 });
 
@@ -291,10 +316,25 @@ app.post('/sales/:id/void', WRITE, async (c) => {
 
 // ---------- customers + credit ----------
 app.get('/customers', async (c) => {
+  const is_system_owner = c.get('is_system_owner');
+  const pharmacy_id = c.get('pharmacy_id');
   const search = str(c.req.query('q'));
   const debtors = c.req.query('debtors') === '1';
   const where = [];
   const args = [];
+  
+  // Pharmacy filtering
+  if (is_system_owner) {
+    const filterPharmacy = int(c.req.query('pharmacy_id'));
+    if (filterPharmacy) {
+      where.push('pharmacy_id = ?');
+      args.push(filterPharmacy);
+    }
+  } else {
+    where.push('pharmacy_id = ?');
+    args.push(pharmacy_id);
+  }
+  
   if (search) { where.push('(name LIKE ? OR phone LIKE ?)'); args.push(`%${search}%`, `%${search}%`); }
   if (debtors) where.push('credit_balance > 0');
   const rows = await q.all(c.env.DB, `SELECT * FROM customers ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY ${debtors ? 'credit_balance DESC' : 'name'} LIMIT 200`, ...args);

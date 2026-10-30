@@ -18,14 +18,28 @@ function periodRange(c) {
 app.get('/dashboard', SALES_VIEW, async (c) => {
   const db = c.env.DB;
   const user = c.get('user');
+  const is_system_owner = c.get('is_system_owner');
+  const pharmacy_id = c.get('pharmacy_id');
   const today = eatDate();
   const yesterday = addDays(today, -1);
   const own = user.role === 'cashier' ? ' AND s.cashier_id = ' + int(user.id) : '';
+  
+  // Pharmacy filtering
+  let pharmacyFilter = '';
+  if (is_system_owner) {
+    const filterPharmacy = int(c.req.query('pharmacy_id'));
+    if (filterPharmacy) {
+      pharmacyFilter = ' AND s.pharmacy_id = ' + filterPharmacy;
+    }
+  } else {
+    pharmacyFilter = ' AND s.pharmacy_id = ' + pharmacy_id;
+  }
+  
   const day = async (d) => {
     const [a, z] = eatRange(d);
     return q.first(db,
       `SELECT COUNT(*) n, COALESCE(SUM(s.total),0) total, COALESCE(SUM(s.vat),0) vat FROM sales s
-       WHERE s.status='completed' AND s.sale_date >= ? AND s.sale_date < ?${own}`, a, z);
+       WHERE s.status='completed' AND s.sale_date >= ? AND s.sale_date < ?${own}${pharmacyFilter}`, a, z);
   };
   const t = await day(today);
   const y = await day(yesterday);
@@ -35,7 +49,7 @@ app.get('/dashboard', SALES_VIEW, async (c) => {
   if (user.role !== 'cashier') {
     const cost = await q.first(db,
       `SELECT COALESCE(SUM(i.unit_cost * i.qty_units),0) cost FROM sale_items i JOIN sales s ON s.id=i.sale_id
-       WHERE s.status='completed' AND s.sale_date >= ? AND s.sale_date < ?`, ta, tz);
+       WHERE s.status='completed' AND s.sale_date >= ? AND s.sale_date < ?${pharmacyFilter}`, ta, tz);
     profit = money(t.total - t.vat - cost.cost);
   }
 
@@ -46,14 +60,14 @@ app.get('/dashboard', SALES_VIEW, async (c) => {
     top[k] = await q.all(db,
       `SELECT i.drug_id, d.brand_name, d.strength, SUM(i.qty_units) units, SUM(i.line_total) revenue, d.pack_size
        FROM sale_items i JOIN sales s ON s.id=i.sale_id JOIN drugs d ON d.id=i.drug_id
-       WHERE s.status='completed' AND s.sale_date >= ? AND s.sale_date < ?${own}
+       WHERE s.status='completed' AND s.sale_date >= ? AND s.sale_date < ?${own}${pharmacyFilter}
        GROUP BY i.drug_id ORDER BY revenue DESC LIMIT 8`, a, z);
   }
 
   const [fa, fz] = eatRange(addDays(today, -13), today);
   const trendRows = await q.all(db,
     `SELECT date(s.sale_date,'+3 hours') day, COUNT(*) n, SUM(s.total) total FROM sales s
-     WHERE s.status='completed' AND s.sale_date >= ? AND s.sale_date < ?${own} GROUP BY day`, fa, fz);
+     WHERE s.status='completed' AND s.sale_date >= ? AND s.sale_date < ?${own}${pharmacyFilter} GROUP BY day`, fa, fz);
   const map = new Map(trendRows.map((r) => [r.day, r]));
   const trend = [];
   for (let i = 13; i >= 0; i--) {
@@ -63,7 +77,7 @@ app.get('/dashboard', SALES_VIEW, async (c) => {
 
   const byMethod = await q.all(db,
     `SELECT p.method, SUM(p.amount) total FROM payments p JOIN sales s ON s.id=p.sale_id
-     WHERE s.status='completed' AND s.sale_date >= ? AND s.sale_date < ?${own} GROUP BY p.method ORDER BY total DESC`, ta, tz);
+     WHERE s.status='completed' AND s.sale_date >= ? AND s.sale_date < ?${own}${pharmacyFilter} GROUP BY p.method ORDER BY total DESC`, ta, tz);
 
   return c.json({
     today: { count: t.n, total: money(t.total), average: t.n ? money(t.total / t.n) : 0, profit },
@@ -76,37 +90,68 @@ app.get('/dashboard', SALES_VIEW, async (c) => {
 app.get('/reports/daily', SALES_VIEW, async (c) => {
   const db = c.env.DB;
   const user = c.get('user');
+  const is_system_owner = c.get('is_system_owner');
+  const pharmacy_id = c.get('pharmacy_id');
   const date = isDate(c.req.query('date')) ? c.req.query('date') : eatDate();
   const [a, z] = eatRange(date);
   const own = user.role === 'cashier' ? ' AND s.cashier_id = ' + int(user.id) : '';
+  
+  // Pharmacy filtering
+  let pharmacyFilter = '';
+  if (is_system_owner) {
+    const filterPharmacy = int(c.req.query('pharmacy_id'));
+    if (filterPharmacy) {
+      pharmacyFilter = ' AND s.pharmacy_id = ' + filterPharmacy;
+    }
+  } else {
+    pharmacyFilter = ' AND s.pharmacy_id = ' + pharmacy_id;
+  }
+  
   const byCashier = await q.all(db,
     `SELECT u.name cashier, COUNT(*) sales, SUM(s.total) total, SUM(s.discount) discount, SUM(s.balance_due) credit
      FROM sales s JOIN users u ON u.id=s.cashier_id
-     WHERE s.status='completed' AND s.sale_date >= ? AND s.sale_date < ?${own} GROUP BY s.cashier_id ORDER BY total DESC`, a, z);
+     WHERE s.status='completed' AND s.sale_date >= ? AND s.sale_date < ?${own}${pharmacyFilter} GROUP BY s.cashier_id ORDER BY total DESC`, a, z);
   const byMethod = await q.all(db,
     `SELECT u.name cashier, p.method, SUM(p.amount) total FROM payments p JOIN sales s ON s.id=p.sale_id JOIN users u ON u.id=s.cashier_id
-     WHERE s.status='completed' AND s.sale_date >= ? AND s.sale_date < ?${own} GROUP BY s.cashier_id, p.method ORDER BY u.name, p.method`, a, z);
+     WHERE s.status='completed' AND s.sale_date >= ? AND s.sale_date < ?${own}${pharmacyFilter} GROUP BY s.cashier_id, p.method ORDER BY u.name, p.method`, a, z);
   const creditIn = await q.all(db,
     `SELECT p.reference, SUM(p.amount) total FROM payments p WHERE p.method='credit_payment' AND p.sale_id IS NULL
      AND p.paid_at >= ? AND p.paid_at < ? GROUP BY p.reference`, a, z);
   const voided = await q.first(db,
-    `SELECT COUNT(*) n, COALESCE(SUM(total),0) total FROM sales s WHERE s.status<>'completed' AND s.sale_date >= ? AND s.sale_date < ?${own}`, a, z);
+    `SELECT COUNT(*) n, COALESCE(SUM(total),0) total FROM sales s WHERE s.status<>'completed' AND s.sale_date >= ? AND s.sale_date < ?${own}${pharmacyFilter}`, a, z);
   return c.json({ date, byCashier, byMethod, creditIn, voided });
 });
 
 // ---------- profit ----------
 app.get('/reports/profit', MGMT, async (c) => {
+  const is_system_owner = c.get('is_system_owner');
+  const pharmacy_id = c.get('pharmacy_id');
   const { from, to, range } = periodRange(c);
   const group = str(c.req.query('group')) || 'drug';
   const key = group === 'category' ? `COALESCE(d.category,'Uncategorised')` : group === 'day' ? `date(s.sale_date,'+3 hours')` : `d.brand_name || COALESCE(' ' || d.strength,'')`;
+  
+  // Pharmacy filtering
+  let pharmacyFilter = '';
+  const extraArgs = [];
+  if (is_system_owner) {
+    const filterPharmacy = int(c.req.query('pharmacy_id'));
+    if (filterPharmacy) {
+      pharmacyFilter = ' AND s.pharmacy_id = ?';
+      extraArgs.push(filterPharmacy);
+    }
+  } else {
+    pharmacyFilter = ' AND s.pharmacy_id = ?';
+    extraArgs.push(pharmacy_id);
+  }
+  
   const rows = await q.all(c.env.DB,
     `SELECT ${key} label, SUM(i.qty_units) units, SUM(i.line_total) revenue, SUM(i.unit_cost * i.qty_units) cost,
             SUM(i.line_total) - SUM(i.unit_cost * i.qty_units) profit
      FROM sale_items i JOIN sales s ON s.id=i.sale_id JOIN drugs d ON d.id=i.drug_id
-     WHERE s.status='completed' AND s.sale_date >= ? AND s.sale_date < ? GROUP BY label ORDER BY ${group === 'day' ? 'label' : 'profit DESC'}`, ...range);
+     WHERE s.status='completed' AND s.sale_date >= ? AND s.sale_date < ?${pharmacyFilter} GROUP BY label ORDER BY ${group === 'day' ? 'label' : 'profit DESC'}`, ...range, ...extraArgs);
   const totals = rows.reduce((t, r) => ({ revenue: t.revenue + r.revenue, cost: t.cost + r.cost, profit: t.profit + r.profit }), { revenue: 0, cost: 0, profit: 0 });
   const disc = await q.first(c.env.DB,
-    `SELECT COALESCE(SUM(discount),0) discount FROM sales WHERE status='completed' AND sale_date >= ? AND sale_date < ?`, ...range);
+    `SELECT COALESCE(SUM(discount),0) discount FROM sales WHERE status='completed' AND sale_date >= ? AND sale_date < ?${pharmacyFilter}`, ...range, ...extraArgs);
   return c.json({ from, to, group, rows, totals: { revenue: money(totals.revenue), cost: money(totals.cost), gross_profit: money(totals.profit), discounts: money(disc.discount), net_profit: money(totals.profit - disc.discount) } });
 });
 

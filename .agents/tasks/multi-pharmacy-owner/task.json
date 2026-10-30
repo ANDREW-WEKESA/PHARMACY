@@ -1,0 +1,12 @@
+{
+  "task_id": "task-multi-pharmacy-owner",
+  "task_description": "Implement multi-pharmacy owner management system allowing one owner to manage multiple pharmacy locations with staff assignments and consolidated reporting",
+  "status": "pending",
+  "feature_order": [
+    "FEAT-001",
+    "FEAT-002",
+    "FEAT-003",
+    "FEAT-004"
+  ],
+  "blocked_reason": null
+}

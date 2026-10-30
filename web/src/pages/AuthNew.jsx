@@ -57,6 +57,7 @@ export function AuthNew({ onDone, needsSetup }) {
         owner_email: form.email,
         owner_phone: form.phone,
         password: form.password,
+        is_system_owner: form.isSystemOwner ? 1 : 0,
       });
       setMode('welcome');
       setTimeout(() => onDone(token), 2000);
@@ -156,6 +157,29 @@ export function AuthNew({ onDone, needsSetup }) {
                 minLength={8}
               />
               <small>At least 8 characters</small>
+            </div>
+
+            <div className="form-group">
+              <label className="check" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <input 
+                  type="checkbox" 
+                  checked={!!form.isSystemOwner} 
+                  onChange={(e) => setForm({ ...form, isSystemOwner: e.target.checked })} 
+                />
+                <span>I manage multiple pharmacy locations</span>
+              </label>
+              {form.isSystemOwner && (
+                <div style={{ 
+                  padding: 10, 
+                  background: '#f0f9ff', 
+                  border: '1px solid #0ea5e9', 
+                  borderRadius: 4,
+                  fontSize: 14,
+                  marginTop: 8
+                }}>
+                  ℹ️ You'll be able to add more pharmacies and assign staff after setup
+                </div>
+              )}
             </div>
 
             {error && <div className="auth-error">{error}</div>}
