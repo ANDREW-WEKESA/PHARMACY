@@ -5,8 +5,8 @@
   "scripts": {
     "install:all": "npm install && npm install --prefix web",
     "build:web": "npm run build --prefix web",
-    "db:migrate:local": "wrangler d1 migrations apply pharmacy-db --local",
-    "db:migrate:remote": "wrangler d1 migrations apply pharmacy-db --remote",
+    "db:migrate:local": "wrangler d1 migrations apply pharmacy-db-prod --local",
+    "db:migrate:remote": "wrangler d1 migrations apply pharmacy-db-prod --remote",
     "dev:api": "wrangler dev --local --port 8787",
     "dev:web": "npm run dev --prefix web",
     "deploy": "npm run build:web && wrangler deploy",

@@ -1,0 +1,24 @@
+{
+  "id": "FEAT-001",
+  "type": "feat",
+  "description": "Create database schema for owner notifications: migration 0004 adds owner_notifications table with proper foreign keys, indexes, and CHECK constraints for type/category fields. Includes fields for owner_user_id, pharmacy_id (nullable for system-wide), type (info/warning/critical/security), category (sales/stock/staff/auth/security/system), title, message, metadata JSON, is_read, requires_action, timestamps.",
+  "status": "completed",
+  "steps": [
+    "Create worker/migrations/0004_owner_notifications.sql with: CREATE TABLE owner_notifications (id INTEGER PRIMARY KEY AUTOINCREMENT, owner_user_id INTEGER NOT NULL REFERENCES users(id), pharmacy_id INTEGER REFERENCES pharmacy(id), type TEXT NOT NULL CHECK(type IN ('info','warning','critical','security')), category TEXT NOT NULL CHECK(category IN ('sales','stock','staff','auth','security','system')), title TEXT NOT NULL, message TEXT NOT NULL, metadata TEXT, is_read INTEGER NOT NULL DEFAULT 0, requires_action INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (datetime('now')))",
+    "Add indexes: CREATE INDEX idx_owner_notifications_owner_read ON owner_notifications(owner_user_id, is_read); CREATE INDEX idx_owner_notifications_pharmacy ON owner_notifications(pharmacy_id); CREATE INDEX idx_owner_notifications_created ON owner_notifications(created_at DESC)",
+    "Test migration locally: run 'npm run db:migrate:local' and verify table exists with correct schema using D1 console or sqlite3 .wrangler/state/v3/d1/miniflare-D1DatabaseObject/*.sqlite"
+  ],
+  "acceptance_criteria": [
+    "Migration file 0004_owner_notifications.sql exists in worker/migrations/",
+    "Table owner_notifications has all specified columns with correct types and constraints",
+    "All three indexes exist on the table",
+    "Migration runs without errors on fresh local database"
+  ],
+  "verification": [
+    "Run 'npm run db:migrate:local' and check exit code 0",
+    "Query schema: wrangler d1 execute pharmacy-db --local --command 'PRAGMA table_info(owner_notifications)' shows all columns",
+    "Query indexes: wrangler d1 execute pharmacy-db --local --command 'SELECT name FROM sqlite_master WHERE type=\"index\" AND tbl_name=\"owner_notifications\"' shows 3 indexes"
+  ],
+  "blocked_reason": null,
+  "findings": "Migration 0004_owner_notifications.sql successfully created and applied. All indexes created successfully. Fixed npm script db:migrate:local to use correct database name (pharmacy-db-prod instead of pharmacy-db). Table schema verified with all required columns, constraints, and indexes in place."
+}
