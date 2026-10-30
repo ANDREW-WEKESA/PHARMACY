@@ -66,7 +66,6 @@ export default function OwnerDashboard({ user, go }) {
                       <th className="r">Low Stock</th>
                       <th className="r">Expiry Alerts</th>
                       <th className="r">Staff</th>
-                      <th></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -95,14 +94,6 @@ export default function OwnerDashboard({ user, go }) {
                           )}
                         </td>
                         <td className="r">{num(p.staff_count || 0)}</td>
-                        <td>
-                          <button 
-                            className="btn sm" 
-                            onClick={() => go('owner-pharmacies')}
-                          >
-                            View
-                          </button>
-                        </td>
                       </tr>
                     ))}
                   </tbody>

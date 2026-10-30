@@ -4,6 +4,9 @@ import { get } from '../api.js';
 const PharmacyContext = createContext(null);
 
 export function PharmacyProvider({ children, user }) {
+  if (!user) {
+    console.warn('PharmacyProvider: user prop is required but was not provided');
+  }
   const isSystemOwner = user?.is_system_owner === 1;
   const [selectedPharmacyId, setSelectedPharmacyId] = useState(() => {
     try {

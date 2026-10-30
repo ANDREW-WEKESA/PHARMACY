@@ -176,7 +176,7 @@ function StaffForm({ staff, pharmacyList, onClose, onDone }) {
         </Field>
         <Field label="Role">
           <select value={f.role} onChange={set('role')}>
-            {Object.entries(ROLE_LABEL).map(([k, v]) => (
+            {Object.entries(ROLE_LABEL).filter(([k]) => k !== 'owner').map(([k, v]) => (
               <option key={k} value={k}>{v}</option>
             ))}
           </select>
