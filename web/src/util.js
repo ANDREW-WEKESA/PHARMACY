@@ -57,3 +57,38 @@ export function parseCSV(text) {
   const head = rows[0].map((h) => h.trim().toLowerCase().replace(/\s+/g, '_'));
   return rows.slice(1).map((r) => Object.fromEntries(head.map((h, i) => [h, (r[i] ?? '').trim()])));
 }
+
+// Enhanced Excel export with styled headers
+export function toExcel(rows, columns, sheetName = 'Sheet1') {
+  const escapeXml = (str) => String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+  
+  let xml = '<?xml version="1.0"?><?mso-application progid="Excel.Sheet"?>';
+  xml += '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">';
+  xml += '<Styles><Style ss:ID="header"><Font ss:Bold="1"/><Interior ss:Color="#4F81BD" ss:Pattern="Solid"/></Style></Styles>';
+  xml += `<Worksheet ss:Name="${escapeXml(sheetName)}"><Table>`;
+  
+  // Header row
+  xml += '<Row>';
+  columns.forEach(col => {
+    xml += `<Cell ss:StyleID="header"><Data ss:Type="String">${escapeXml(col.label)}</Data></Cell>`;
+  });
+  xml += '</Row>';
+  
+  // Data rows
+  rows.forEach(row => {
+    xml += '<Row>';
+    columns.forEach(col => {
+      const value = typeof col.value === 'function' ? col.value(row) : row[col.key];
+      const isNumber = typeof value === 'number' || (!isNaN(value) && value !== '');
+      xml += `<Cell><Data ss:Type="${isNumber ? 'Number' : 'String'}">${escapeXml(value)}</Data></Cell>`;
+    });
+    xml += '</Row>';
+  });
+  
+  xml += '</Table></Worksheet></Workbook>';
+  return xml;
+}
+
+export function downloadExcel(name, xmlContent) {
+  download(name, xmlContent, 'application/vnd.ms-excel');
+}

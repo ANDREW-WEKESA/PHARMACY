@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { get, post, qs } from '../api.js';
-import { KES, num, fmtDate, eatTime, todayEAT, addDaysStr, METHOD_LABEL, toCSV, download } from '../util.js';
+import { KES, num, fmtDate, eatTime, todayEAT, addDaysStr, METHOD_LABEL, toCSV, toExcel, download, downloadExcel } from '../util.js';
 import { PageHead, Spinner, ErrorBox, useLoad, Empty, Badge, Tabs, Modal, Field, useToast } from '../ui.jsx';
 
 export default function Reports({ user, pharmacy }) {
@@ -41,8 +41,10 @@ function Daily() {
 function Profit() {
   const [from, setFrom] = useState(addDaysStr(todayEAT(), -29)); const [to, setTo] = useState(todayEAT()); const [group, setGroup] = useState('drug');
   const r = useLoad(() => get('/reports/profit' + qs({ from, to, group })), [from, to, group]); const x = r.data;
+  const profitCols = [{ label: 'Item', key: 'label' }, { label: 'Units', key: 'units' }, { label: 'Revenue', key: 'revenue' }, { label: 'Cost', key: 'cost' }, { label: 'Profit', key: 'profit' }];
   return <div className="card"><Range {...{ from, to, setFrom, setTo }} /><div className="toolbar"><select value={group} onChange={(e) => setGroup(e.target.value)} aria-label="Group by"><option value="drug">By drug</option><option value="category">By category</option><option value="day">By day</option></select>
-    <button className="btn sm" disabled={!x?.rows.length} onClick={() => download('profit.csv', toCSV(x.rows, [{ label: 'Item', key: 'label' }, { label: 'Units', key: 'units' }, { label: 'Revenue', key: 'revenue' }, { label: 'Cost', key: 'cost' }, { label: 'Profit', key: 'profit' }]))}>⬇ Export</button></div>
+    <button className="btn sm" disabled={!x?.rows.length} onClick={() => download('profit.csv', toCSV(x.rows, profitCols))}>⬇ CSV</button>
+    <button className="btn sm" disabled={!x?.rows.length} onClick={() => downloadExcel('profit.xls', toExcel(x.rows, profitCols, 'Profit Report'))}>⬇ Excel</button></div>
     <ErrorBox error={r.error} retry={r.reload} />{r.loading && !x ? <Spinner /> : x && <>
       <div className="grid g4" style={{ marginBottom: 14 }}>{[['Revenue', x.totals.revenue], ['Cost of goods', x.totals.cost], ['Gross profit', x.totals.gross_profit], ['Net after discounts', x.totals.net_profit]].map(([l, v]) => <div className="stat" key={l} style={{ boxShadow: 'none', border: '1px solid var(--line)' }}><span>{l}</span><strong style={{ fontSize: 21 }}>{KES(v)}</strong></div>)}</div>
       {x.rows.length === 0 ? <Empty icon="📈" title="No sales in this period" /> : <div className="table-wrap"><table><thead><tr><th>Item</th><th className="r">Units</th><th className="r">Revenue</th><th className="r">Cost</th><th className="r">Profit</th><th className="r">Margin</th></tr></thead><tbody>
@@ -51,7 +53,11 @@ function Profit() {
 
 function Valuation() {
   const r = useLoad(() => get('/reports/stock-valuation')); const x = r.data;
-  return <div className="card"><div className="card-head"><h3>Stock value on hand</h3><button className="btn sm" disabled={!x?.rows.length} onClick={() => download('stock-valuation.csv', toCSV(x.rows, [{ label: 'Drug', value: (d) => d.brand_name + ' ' + (d.strength || '') }, { label: 'Units', key: 'units' }, { label: 'Cost value', key: 'cost_value' }, { label: 'Retail value', key: 'retail_value' }]))}>⬇ Export</button></div>
+  const valuationCols = [{ label: 'Drug', value: (d) => d.brand_name + ' ' + (d.strength || '') }, { label: 'Units', key: 'units' }, { label: 'Cost value', key: 'cost_value' }, { label: 'Retail value', key: 'retail_value' }];
+  return <div className="card"><div className="card-head"><h3>Stock value on hand</h3><div>
+    <button className="btn sm" disabled={!x?.rows.length} onClick={() => download('stock-valuation.csv', toCSV(x.rows, valuationCols))}>⬇ CSV</button>
+    <button className="btn sm" disabled={!x?.rows.length} style={{marginLeft: 8}} onClick={() => downloadExcel('stock-valuation.xls', toExcel(x.rows, valuationCols, 'Stock Valuation'))}>⬇ Excel</button>
+  </div></div>
     <ErrorBox error={r.error} retry={r.reload} />{r.loading && !x ? <Spinner /> : x && (x.rows.length === 0 ? <Empty icon="📦" title="No stock on hand" /> : <>
       <div className="grid g3" style={{ marginBottom: 14 }}>{[['At cost', x.totals.cost], ['At selling price', x.totals.retail], ['Potential margin', x.totals.potential_margin]].map(([l, v]) => <div className="stat" key={l} style={{ boxShadow: 'none', border: '1px solid var(--line)' }}><span>{l}</span><strong style={{ fontSize: 21 }}>{KES(v)}</strong></div>)}</div>
       <div className="table-wrap"><table><thead><tr><th>Drug</th><th className="r">Units</th><th className="r">Cost value</th><th className="r">Retail value</th></tr></thead><tbody>{x.rows.map((d) => <tr key={d.id}><td>{d.brand_name} {d.strength}</td><td className="r">{num(d.units)}</td><td className="r mono">{KES(d.cost_value)}</td><td className="r mono">{KES(d.retail_value)}</td></tr>)}</tbody></table></div></>)}</div>;
@@ -66,10 +72,12 @@ function Movers() {
 function Controlled({ pharmacy }) {
   const [from, setFrom] = useState(addDaysStr(todayEAT(), -29)); const [to, setTo] = useState(todayEAT()); const [drug, setDrug] = useState('');
   const r = useLoad(() => get('/reports/controlled' + qs({ from, to, drug_id: drug })), [from, to, drug]); const x = r.data;
+  const controlledCols = [{ label: 'Date', key: 'entry_date' }, { label: 'Drug', value: (e) => e.brand_name + ' ' + (e.strength || '') }, { label: 'Batch', key: 'batch_no' }, { label: 'In/Out', key: 'direction' }, { label: 'Quantity', key: 'qty_units' }, { label: 'Balance', key: 'balance_units' }, { label: 'Patient', key: 'patient_name' }, { label: 'Phone', key: 'patient_phone' }, { label: 'Prescriber', key: 'prescriber_name' }, { label: 'Facility', key: 'prescriber_facility' }, { label: 'Dispensed by', key: 'user_name' }, { label: 'Approved by', key: 'approved_by_name' }, { label: 'Note', key: 'note' }];
   return <div className="card"><div className="card-head"><h3>Controlled drugs register</h3></div>
     <div className="report-print-head"><div>Superintendent pharmacist: {pharmacy.superintendent_name} {pharmacy.superintendent_reg_no && `(${pharmacy.superintendent_reg_no})`}</div></div>
     <Range {...{ from, to, setFrom, setTo }} /><div className="toolbar"><select value={drug} onChange={(e) => setDrug(e.target.value)} aria-label="Drug"><option value="">All controlled drugs</option>{x?.drugs.map((d) => <option key={d.id} value={d.id}>{d.brand_name} {d.strength}</option>)}</select>
-      <button className="btn sm" disabled={!x?.rows.length} onClick={() => download('controlled-register.csv', toCSV(x.rows, [{ label: 'Date', key: 'entry_date' }, { label: 'Drug', value: (e) => e.brand_name + ' ' + (e.strength || '') }, { label: 'Batch', key: 'batch_no' }, { label: 'In/Out', key: 'direction' }, { label: 'Quantity', key: 'qty_units' }, { label: 'Balance', key: 'balance_units' }, { label: 'Patient', key: 'patient_name' }, { label: 'Phone', key: 'patient_phone' }, { label: 'Prescriber', key: 'prescriber_name' }, { label: 'Facility', key: 'prescriber_facility' }, { label: 'Dispensed by', key: 'user_name' }, { label: 'Approved by', key: 'approved_by_name' }, { label: 'Note', key: 'note' }]))}>⬇ Export</button></div>
+      <button className="btn sm" disabled={!x?.rows.length} onClick={() => download('controlled-register.csv', toCSV(x.rows, controlledCols))}>⬇ CSV</button>
+      <button className="btn sm" disabled={!x?.rows.length} onClick={() => downloadExcel('controlled-register.xls', toExcel(x.rows, controlledCols, 'Controlled Register'))}>⬇ Excel</button></div>
     <ErrorBox error={r.error} retry={r.reload} />{r.loading && !x ? <Spinner /> : x?.rows.length === 0 ? <Empty icon="🔒" title="No controlled drug movements" sub="Receipts, sales and adjustments appear here automatically." /> :
       <div className="table-wrap"><table><thead><tr><th>Date</th><th>Drug / batch</th><th>In / out</th><th className="r">Qty</th><th className="r">Balance</th><th>Patient</th><th>Prescriber</th><th>Dispensed / approved</th><th>Note</th></tr></thead><tbody>
         {x?.rows.map((e) => <tr key={e.id}><td>{eatTime(e.entry_date)}</td><td>{e.brand_name} {e.strength}<div className="sub">{e.batch_no}</div></td><td>{e.direction === 'in' ? <Badge kind="ok">In</Badge> : <Badge kind="bad">Out</Badge>}</td><td className="r">{e.qty_units}</td><td className="r"><strong>{e.balance_units}</strong></td>
