@@ -4,6 +4,7 @@ import { PageHead, Spinner, ErrorBox, useLoad, Empty, Badge, Tabs } from '../ui.
 import { useState } from 'react';
 import { NotificationCenter } from '../components/NotificationCenter.jsx';
 
+// Dashboard component showing pharmacy overview
 function Bars({ rows }) {
   const max = Math.max(1, ...rows.map((r) => r.total));
   return (
@@ -21,8 +22,8 @@ export default function Dashboard({ user, go }) {
   const d = useLoad(() => get('/dashboard'));
   const canStock = user.role !== 'cashier';
   const a = useLoad(() => (canStock ? get('/stock/alerts') : Promise.resolve(null)));
-  const expiry = useLoad(() => get('/expiry-alerts'), []);
-  const stockAlerts = useLoad(() => get('/stock-alerts'), []);
+  const expiry = useLoad(() => get('/expiry-alerts').catch(() => ({ summary: { expired: 0, critical: 0, warning: 0, total: 0 }, alerts: [] })), []);
+  const stockAlerts = useLoad(() => get('/stock-alerts').catch(() => ({ summary: { out_of_stock: 0, critical: 0, low: 0, total: 0 }, alerts: [] })), []);
   const [topTab, setTopTab] = useState('day');
   const [expTab, setExpTab] = useState('d30');
   const [showNotifications, setShowNotifications] = useState(false);

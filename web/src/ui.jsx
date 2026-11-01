@@ -51,7 +51,7 @@ export const PageHead = ({ icon, title, sub, children }) => (
 export const Empty = ({ icon = '💊', title, sub }) => (
   <div className="empty"><div className="empty-icon">{icon}</div><strong>{title}</strong>{sub && <span>{sub}</span>}</div>
 );
-export const Badge = ({ kind = 'gray', children }) => <span className={'badge ' + kind}>{children}</span>;
+export const Badge = ({ kind = 'gray', className = '', style, children }) => <span className={'badge ' + kind + (className ? ' ' + className : '')} style={style}>{children}</span>;
 export const Spinner = () => <div className="spinner" aria-label="Loading" />;
 export const ErrorBox = ({ error, retry }) => error ? <div className="errbox">{error}{retry && <button className="btn sm" onClick={retry}>Try again</button>}</div> : null;
 

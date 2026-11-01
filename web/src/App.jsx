@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { get, post, getToken, setToken, setUnauthorizedHandler } from './api.js';
 import { ROLE_LABEL } from './util.js';
 import { Spinner, useToast } from './ui.jsx';
-import { Setup, Login } from './pages/Auth.jsx';
+import { AuthNew } from './pages/AuthNew.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Stock from './pages/Stock.jsx';
 import Sales from './pages/Sales.jsx';
@@ -50,8 +50,8 @@ export default function App() {
 
   if (boot.loading) return <div className="auth"><Spinner /></div>;
   if (boot.error) return <div className="auth"><div className="auth-card"><h1>Can't reach the server</h1><p>{boot.error}</p><button className="btn primary" onClick={() => location.reload()}>Try again</button></div></div>;
-  // Always show login, skip setup
-  if (!session) return <Login onDone={onAuthed} needsSetup={boot.needsSetup} />;
+  // Show new professional auth page
+  if (!session) return <AuthNew onDone={onAuthed} needsSetup={boot.needsSetup} />;
   return <Shell session={session} refreshSession={refreshSession} logout={logout} />;
 }
 

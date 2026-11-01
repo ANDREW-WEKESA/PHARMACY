@@ -93,6 +93,27 @@ app.post('/auth/change-password', async (c) => {
   return c.json({ ok: true });
 });
 
+// Password reset request (placeholder - would need email service)
+app.post('/auth/reset-password-request', async (c) => {
+  const b = await body(c);
+  const email = str(b.email, 120).toLowerCase();
+  if (!email) throw bad('Email is required');
+  
+  const u = await q.first(c.env.DB, 'SELECT id,name,email FROM users WHERE lower(email)=?', email);
+  
+  // Always return success to prevent email enumeration
+  // In production, you would send an actual email here
+  await new Promise(resolve => setTimeout(resolve, 500)); // Simulate email delay
+  
+  if (u) {
+    // TODO: Generate reset token and send email
+    // For now, just log the request
+    await audit(c.env.DB, null, 'password_reset_requested', 'user', u.id, email);
+  }
+  
+  return c.json({ ok: true, message: 'If an account exists with that email, a reset link has been sent.' });
+});
+
 // ---------- users (owner) ----------
 app.get('/users', need('owner', 'pharmacist'), async (c) => {
   const rows = await q.all(c.env.DB, 'SELECT id,name,email,phone,role,reg_no,active,created_at FROM users ORDER BY active DESC, name');
