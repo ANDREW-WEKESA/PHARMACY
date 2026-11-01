@@ -10,8 +10,8 @@ run_worker_first = ["/api/*"]
 
 [[d1_databases]]
 binding = "DB"
-database_name = "pharmacy-db"
-database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+database_name = "pharmacy-db-prod"
+database_id = "547bfb4d-1ae1-4fb5-bc47-475e4f273bb1"
 migrations_dir = "worker/migrations"
 
 # Secrets are NOT stored here. Set the JWT secret with:
