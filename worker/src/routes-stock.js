@@ -3,6 +3,7 @@ import {
   q, audit, auditStmt, bad, HttpError, str, num, int, money, isDate, eatDate, nowUtc, DRUG_CLASSES,
 } from './lib.js';
 import { need, body } from './routes-core.js';
+import { notifyOwner, detectAbnormalStock } from './notification-service.js';
 
 const app = new Hono();
 const WRITE = need('owner', 'pharmacist');
@@ -494,6 +495,23 @@ app.post('/adjustments', need('owner', 'pharmacist', 'stock_clerk'), async (c) =
   if (reason === 'other' && !str(b.note)) throw bad('Add a note explaining this adjustment.');
   const stmts = await adjustStatements(db, user, batch, drug, change, reason, str(b.note, 300), witness, { value: null });
   await db.batch(stmts);
+  
+  // Notify owner of abnormal adjustments
+  if (detectAbnormalStock({ qty_change: change })) {
+    const pharmacy = await q.first(db, 'SELECT owner_user_id, id FROM pharmacy WHERE id=?', drug.pharmacy_id);
+    if (pharmacy && pharmacy.owner_user_id) {
+      await notifyOwner(db, pharmacy.owner_user_id, {
+        pharmacyId: pharmacy.id,
+        type: 'warning',
+        category: 'stock',
+        title: 'Large Stock Adjustment',
+        message: `${drug.brand_name}${drug.strength ? ' ' + drug.strength : ''}: ${change > 0 ? '+' : ''}${change} units adjusted. Reason: ${reason}`,
+        metadata: { drug_id: drug.id, drug_name: drug.brand_name, qty_change: change, reason, batch_no: batch.batch_no },
+        requiresAction: false
+      });
+    }
+  }
+  
   return c.json({ ok: true });
 });
 

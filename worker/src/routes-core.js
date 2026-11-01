@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import {
   q, audit, bad, HttpError, str, num, int, normPhone, ROLES, hashPassword, verifyPassword, signJwt, nowUtc,
 } from './lib.js';
+import { notifyOwner } from './notification-service.js';
 
 const app = new Hono();
 
@@ -85,6 +86,23 @@ app.post('/auth/login', async (c) => {
   const ok = u && u.active && (await verifyPassword(password, u.password_hash, u.password_salt));
   if (!ok) {
     await audit(c.env.DB, null, 'login_failed', 'user', null, idRaw);
+    
+    // Notify owner of failed login attempt if user exists and has pharmacy
+    if (u && u.assigned_pharmacy_id) {
+      const pharmacy = await q.first(c.env.DB, 'SELECT owner_user_id, id FROM pharmacy WHERE id=?', u.assigned_pharmacy_id);
+      if (pharmacy && pharmacy.owner_user_id) {
+        await notifyOwner(c.env.DB, pharmacy.owner_user_id, {
+          pharmacyId: pharmacy.id,
+          type: 'security',
+          category: 'auth',
+          title: 'Failed Login Attempt',
+          message: `Failed login attempt for user ${u.name} (${idRaw})`,
+          metadata: { user_id: u.id, user_name: u.name, identifier: idRaw, timestamp: nowUtc() },
+          requiresAction: false
+        });
+      }
+    }
+    
     throw new HttpError(401, 'Wrong email/phone or password.');
   }
   await audit(c.env.DB, u, 'login', 'user', u.id, null);
@@ -128,6 +146,23 @@ app.post('/auth/change-password', async (c) => {
   const { hash, salt } = await hashPassword(String(b.new_password));
   await q.run(c.env.DB, 'UPDATE users SET password_hash=?,password_salt=? WHERE id=?', hash, salt, u.id);
   await audit(c.env.DB, u, 'password_changed', 'user', u.id, null);
+  
+  // Notify owner of password change
+  if (u.assigned_pharmacy_id) {
+    const pharmacy = await q.first(c.env.DB, 'SELECT owner_user_id, id FROM pharmacy WHERE id=?', u.assigned_pharmacy_id);
+    if (pharmacy && pharmacy.owner_user_id && pharmacy.owner_user_id !== u.id) {
+      await notifyOwner(c.env.DB, pharmacy.owner_user_id, {
+        pharmacyId: pharmacy.id,
+        type: 'security',
+        category: 'auth',
+        title: 'Password Changed',
+        message: `User ${u.name} changed their password`,
+        metadata: { user_id: u.id, user_name: u.name, timestamp: nowUtc() },
+        requiresAction: false
+      });
+    }
+  }
+  
   return c.json({ ok: true });
 });
 
@@ -276,6 +311,24 @@ app.post('/users', need('owner'), async (c) => {
     'INSERT INTO users (name,email,phone,password_hash,password_salt,role,reg_no) VALUES (?,?,?,?,?,?,?)',
     name, email, phone, hash, salt, role, str(b.reg_no, 60) || null);
   await audit(c.env.DB, c.get('user'), 'user_created', 'user', r.meta.last_row_id, `${name} (${role})`);
+  
+  // Notify owner of new user creation
+  const owner = c.get('user');
+  if (owner.assigned_pharmacy_id) {
+    const pharmacy = await q.first(c.env.DB, 'SELECT owner_user_id, id FROM pharmacy WHERE id=?', owner.assigned_pharmacy_id);
+    if (pharmacy && pharmacy.owner_user_id) {
+      await notifyOwner(c.env.DB, pharmacy.owner_user_id, {
+        pharmacyId: pharmacy.id,
+        type: 'info',
+        category: 'auth',
+        title: 'New User Created',
+        message: `New user ${name} (${role}) created by ${owner.name}`,
+        metadata: { user_id: r.meta.last_row_id, user_name: name, role, created_by: owner.name },
+        requiresAction: false
+      });
+    }
+  }
+  
   return c.json({ id: r.meta.last_row_id }, 201);
 });
 
@@ -303,6 +356,41 @@ app.put('/users/:id', need('owner'), async (c) => {
     await audit(c.env.DB, c.get('user'), 'password_reset', 'user', id, null);
   }
   await audit(c.env.DB, c.get('user'), 'user_updated', 'user', id, { role, active });
+  
+  // Notify owner of role change or deactivation
+  const owner = c.get('user');
+  if (owner.assigned_pharmacy_id && (role !== u.role || active !== u.active)) {
+    const pharmacy = await q.first(c.env.DB, 'SELECT owner_user_id, id FROM pharmacy WHERE id=?', owner.assigned_pharmacy_id);
+    if (pharmacy && pharmacy.owner_user_id) {
+      let title = '';
+      let message = '';
+      let notifType = 'info';
+      
+      if (active === 0 && u.active === 1) {
+        title = 'User Deactivated';
+        message = `User ${u.name} was deactivated by ${owner.name}`;
+        notifType = 'warning';
+      } else if (role !== u.role) {
+        title = 'User Role Changed';
+        message = `User ${u.name} role changed from ${u.role} to ${role} by ${owner.name}`;
+        notifType = 'info';
+      } else {
+        title = 'User Updated';
+        message = `User ${u.name} was updated by ${owner.name}`;
+      }
+      
+      await notifyOwner(c.env.DB, pharmacy.owner_user_id, {
+        pharmacyId: pharmacy.id,
+        type: notifType,
+        category: 'auth',
+        title,
+        message,
+        metadata: { user_id: id, user_name: u.name, old_role: u.role, new_role: role, old_active: u.active, new_active: active, updated_by: owner.name },
+        requiresAction: false
+      });
+    }
+  }
+  
   return c.json({ ok: true });
 });
 

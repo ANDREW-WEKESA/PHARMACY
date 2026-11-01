@@ -5,6 +5,7 @@ import stock from './routes-stock.js';
 import sales from './routes-sales.js';
 import reports from './routes-reports.js';
 import ownerRoutes from './routes-owner.js';
+import notificationRoutes from './routes-notifications.js';
 
 const app = new Hono();
 
@@ -99,6 +100,7 @@ app.route('/api', stock);
 app.route('/api', sales);
 app.route('/api', reports);
 app.route('/api/owner', ownerRoutes);
+app.route('/api/owner', notificationRoutes);
 
 app.notFound((c) => c.json({ error: 'Not found' }, 404));
 app.onError((err, c) => {

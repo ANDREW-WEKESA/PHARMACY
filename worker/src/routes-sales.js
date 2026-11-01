@@ -4,6 +4,7 @@ import {
 } from './lib.js';
 import { need, body } from './routes-core.js';
 import { drugTotalUnits } from './routes-stock.js';
+import { notifyOwner, detectAbnormalSale } from './notification-service.js';
 
 const app = new Hono();
 const SELLERS = need('owner', 'pharmacist', 'cashier');
@@ -199,6 +200,23 @@ app.post('/sales', SELLERS, async (c) => {
     throw e;
   }
   const sale = await q.first(db, 'SELECT id FROM sales WHERE sale_no=?', saleNo);
+  
+  // Notify owner of abnormal sales
+  if (pharmacy.owner_user_id) {
+    const abnormalCheck = detectAbnormalSale(pharmacy, { sale_date: new Date().toISOString(), total, subtotal, discount });
+    if (abnormalCheck) {
+      await notifyOwner(db, pharmacy.owner_user_id, {
+        pharmacyId: pharmacy.id,
+        type: abnormalCheck.severity === 'critical' ? 'critical' : 'warning',
+        category: 'sales',
+        title: 'Abnormal Sale Detected',
+        message: `${abnormalCheck.reason} - Sale ${saleNo} for ${pharmacy.currency || 'KES'} ${money(total).toLocaleString()} at ${pharmacy.name}`,
+        metadata: { sale_no: saleNo, total, discount, user_name: user.name, user_id: user.id },
+        requiresAction: false
+      });
+    }
+  }
+  
   return c.json({ id: sale.id, sale_no: saleNo, total, change, balance_due: balanceDue }, 201);
 });
 
@@ -311,6 +329,21 @@ app.post('/sales/:id/void', WRITE, async (c) => {
   stmts.push(db.prepare(`UPDATE sales SET status=?, void_reason=?, voided_by=?, voided_at=datetime('now') WHERE id=?`).bind(kind, reason, user.id, id));
   stmts.push(auditStmt(db, user, kind === 'voided' ? 'sale_voided' : 'sale_refunded', 'sale', s.sale_no, { reason, total: s.total }));
   await db.batch(stmts);
+  
+  // Notify owner of refunds/voids
+  const pharmacy = await q.first(db, 'SELECT owner_user_id, id FROM pharmacy WHERE id=?', s.pharmacy_id);
+  if (pharmacy && pharmacy.owner_user_id) {
+    await notifyOwner(db, pharmacy.owner_user_id, {
+      pharmacyId: pharmacy.id,
+      type: 'warning',
+      category: 'sales',
+      title: `Sale ${kind === 'voided' ? 'Voided' : 'Refunded'}`,
+      message: `Sale ${s.sale_no} was ${kind} by ${user.name}. Reason: ${reason}. Amount: KES ${money(s.total)}`,
+      metadata: { sale_no: s.sale_no, sale_id: id, kind, reason, total: s.total, voided_by: user.name },
+      requiresAction: false
+    });
+  }
+  
   return c.json({ ok: true });
 });
 

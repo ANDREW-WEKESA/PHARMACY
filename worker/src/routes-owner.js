@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { q, audit, bad, HttpError, str, int, money, eatDate, nowUtc, normPhone, hashPassword } from './lib.js';
 import { need, body } from './routes-core.js';
+import { notifyOwner } from './notification-service.js';
 
 const app = new Hono();
 const OWNER_ONLY = need('owner');
@@ -149,6 +150,17 @@ app.post('/pharmacies', OWNER_ONLY, SYSTEM_OWNER, async (c) => {
   const pharmacyId = result.meta.last_row_id;
   await audit(db, user, 'pharmacy_created', 'pharmacy', pharmacyId, name);
   
+  // Notify owner of new pharmacy
+  await notifyOwner(db, user.id, {
+    pharmacyId: pharmacyId,
+    type: 'info',
+    category: 'system',
+    title: 'New Pharmacy Created',
+    message: `Pharmacy "${name}" has been created`,
+    metadata: { pharmacy_id: pharmacyId, pharmacy_name: name },
+    requiresAction: false
+  });
+  
   return c.json({ id: pharmacyId }, 201);
 });
 
@@ -188,6 +200,19 @@ app.put('/pharmacies/:id', OWNER_ONLY, SYSTEM_OWNER, async (c) => {
   );
   
   await audit(db, user, 'pharmacy_updated', 'pharmacy', id, { name, active });
+  
+  // Notify owner of pharmacy changes (especially if deactivated)
+  if (active !== pharmacy.active) {
+    await notifyOwner(db, user.id, {
+      pharmacyId: id,
+      type: active === 0 ? 'warning' : 'info',
+      category: 'system',
+      title: active === 0 ? 'Pharmacy Deactivated' : 'Pharmacy Activated',
+      message: `Pharmacy "${name}" has been ${active === 0 ? 'deactivated' : 'activated'}`,
+      metadata: { pharmacy_id: id, pharmacy_name: name, active },
+      requiresAction: false
+    });
+  }
   
   return c.json({ ok: true });
 });
@@ -365,6 +390,17 @@ app.post('/staff', OWNER_ONLY, SYSTEM_OWNER, async (c) => {
   
   await audit(db, user, 'staff_created', 'user', userId, `${name} (${role})`);
   
+  // Notify owner of new staff member
+  await notifyOwner(db, user.id, {
+    pharmacyId: assignedPharmacyId,
+    type: 'info',
+    category: 'staff',
+    title: 'New Staff Member Added',
+    message: `${name} (${role}) has been added to the team`,
+    metadata: { user_id: userId, staff_name: name, role, pharmacy_id: assignedPharmacyId },
+    requiresAction: false
+  });
+  
   return c.json({ id: userId }, 201);
 });
 
@@ -416,6 +452,36 @@ app.put('/staff/:id', OWNER_ONLY, SYSTEM_OWNER, async (c) => {
   }
   
   await audit(db, user, 'staff_updated', 'user', id, { name, role, active });
+  
+  // Notify owner of staff changes
+  if (role !== staff.role || active !== staff.active) {
+    let title = '';
+    let message = '';
+    let notifType = 'info';
+    
+    if (active === 0 && staff.active === 1) {
+      title = 'Staff Member Deactivated';
+      message = `${name} has been deactivated`;
+      notifType = 'warning';
+    } else if (role !== staff.role) {
+      title = 'Staff Role Changed';
+      message = `${name}'s role changed from ${staff.role} to ${role}`;
+      notifType = 'info';
+    } else {
+      title = 'Staff Member Updated';
+      message = `${name}'s profile has been updated`;
+    }
+    
+    await notifyOwner(db, user.id, {
+      pharmacyId: assignedPharmacyId || staff.assigned_pharmacy_id,
+      type: notifType,
+      category: 'staff',
+      title,
+      message,
+      metadata: { user_id: id, staff_name: name, old_role: staff.role, new_role: role, old_active: staff.active, new_active: active },
+      requiresAction: false
+    });
+  }
   
   return c.json({ ok: true });
 });

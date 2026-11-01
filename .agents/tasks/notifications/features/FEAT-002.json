@@ -1,0 +1,41 @@
+{
+  "id": "FEAT-002",
+  "type": "feat",
+  "description": "Backend notification service and API: create notification-service.js with core notifyOwner() function and abnormal activity detectors (large sales, large stock movements, security events), create routes-notifications.js with owner notification endpoints (list, read, mark-all-read, stats), integrate notification triggers into routes-sales.js (refunds, abnormal sales), routes-stock.js (abnormal adjustments), routes-core.js (auth events: failed logins, password changes, new user, role changes, deactivations), routes-owner.js (pharmacy/staff changes).",
+  "status": "completed",
+  "steps": [
+    "Create worker/src/notification-service.js: export async function notifyOwner(db, ownerId, { pharmacyId, type, category, title, message, metadata, requiresAction }) that inserts into owner_notifications. Helper detectAbnormalSale(db, pharmacy, sale) checks if total > pharmacy.expiry_warn_days * 100 (heuristic: large sale). Helper detectAbnormalStock(db, pharmacy, adjustment) checks if Math.abs(adjustment.qty_change) > 500. Helper detectSecurityIssue(db, user, action, detail) always returns true for failed logins, password changes, new user, role changes, deactivations. Helper detectCriticalAlert(db, pharmacy, event) for system-wide critical events.",
+    "Create worker/src/routes-notifications.js: GET /api/owner/notifications with pagination (page, limit 50 max), filters (unread, category, pharmacy_id, type), returns notifications for c.get('user').id where user.is_system_owner. PUT /api/owner/notifications/:id/read marks single notification as read. PUT /api/owner/notifications/mark-all-read marks all unread for owner as read. GET /api/owner/notifications/stats returns { total, unread, critical, by_category: {...} }. All routes use need('owner') middleware and verify ownership (notification.owner_user_id === user.id).",
+    "Update worker/src/routes-sales.js: In POST /sales after successful sale creation, call detectAbnormalSale and notifyOwner if true. In POST /sales/:id/void after refund/void, always call notifyOwner with type='warning', category='sales', title='Sale Refunded/Voided', message with sale_no and reason. Use pharmacy.owner_user_id from pharmacy record.",
+    "Update worker/src/routes-stock.js: In POST /adjustments after adjustment, call detectAbnormalStock and notifyOwner if true with type='warning', category='stock', title='Large Stock Adjustment', message with drug name, quantity, reason. Use pharmacy.owner_user_id.",
+    "Update worker/src/routes-core.js: In POST /auth/login after failed login (inside the fail block after audit log), check if user exists and has pharmacy, then notify owner with type='security', category='auth', title='Failed Login Attempt'. In POST /auth/change-password after success, notify owner. In POST /users (new user) after creation, notify owner. In PUT /users/:id when role changes or active changes to 0, notify owner.",
+    "Update worker/src/routes-owner.js if pharmacy/staff management changes: In POST /pharmacies after creation, notify owner with category='system'. In PUT /pharmacies/:id when active changes, notify. In POST /staff and PUT /staff/:id when role changes or active changes, notify with category='staff'.",
+    "Update worker/src/index.js: Add 'import notificationRoutes from './routes-notifications.js';' and 'app.route('/api/owner', notificationRoutes);' after existing owner routes registration."
+  ],
+  "acceptance_criteria": [
+    "notification-service.js exports notifyOwner and all detector functions",
+    "routes-notifications.js implements all 4 endpoints with proper auth and ownership checks",
+    "Sales route triggers notifications on refunds/voids and abnormal sales",
+    "Stock route triggers notifications on abnormal adjustments",
+    "Core route triggers notifications on auth events (failed login, password change, new user, role change, deactivation)",
+    "Owner route triggers notifications on pharmacy/staff changes",
+    "All notifications correctly identify owner_user_id from pharmacy.owner_user_id",
+    "Notifications include proper type, category, title, message, and metadata JSON"
+  ],
+  "verification": [
+    "Start dev server: npm run dev:api",
+    "Run smoke tests: npm run test:api (existing tests should pass)",
+    "Manual test: Create a sale with large total, verify notification created via GET /api/owner/notifications",
+    "Manual test: Void a sale, verify notification appears",
+    "Manual test: Create stock adjustment > 500 units, verify notification",
+    "Manual test: Attempt failed login, verify security notification",
+    "Manual test: Change user password, verify notification",
+    "Manual test: Create new user, verify notification",
+    "Manual test: Change user role or deactivate, verify notification",
+    "Manual test: GET /api/owner/notifications/stats returns correct counts",
+    "Manual test: PUT /api/owner/notifications/:id/read marks notification as read",
+    "Verify no errors in Worker logs during notification creation"
+  ],
+  "blocked_reason": null,
+  "findings": "Successfully implemented backend notification service and API integration. Created notification-service.js with notifyOwner() function and all detector helpers (detectAbnormalSale, detectAbnormalStock, detectSecurityIssue, detectCriticalAlert). Created routes-notifications.js with 4 endpoints: GET /api/owner/notifications (with pagination and filters), PUT /api/owner/notifications/:id/read, PUT /api/owner/notifications/mark-all-read, GET /api/owner/notifications/stats. Integrated notification triggers into routes-sales.js (abnormal sales, refunds/voids), routes-stock.js (abnormal adjustments), routes-core.js (failed logins, password changes, new users, role changes, deactivations), and routes-owner.js (pharmacy/staff changes). All notifications properly identify owner_user_id from pharmacy.owner_user_id. Fixed duplicate import statements in routes-core.js and index.js. Wrangler dry-run deployment succeeds with no errors. All acceptance criteria met."
+}
