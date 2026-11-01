@@ -35,14 +35,26 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    // Auto-login with bypass token
-    setToken('bypass');
+    // Check if user already has a valid token
+    const existingToken = getToken();
     (async () => {
       try {
         const s = await get('/setup/status');
-        await refreshSession(); // Just load the session directly
-        setBoot({ loading: false, needsSetup: false, error: '' });
-      } catch (e) { setBoot({ loading: false, needsSetup: false, error: e.message }); }
+        if (existingToken) {
+          try {
+            await refreshSession(); // Try to use existing token
+            setBoot({ loading: false, needsSetup: false, error: '' });
+            return;
+          } catch (e) {
+            // Token invalid, clear it
+            setToken(null);
+          }
+        }
+        // No valid token, show login
+        setBoot({ loading: false, needsSetup: s.needsSetup, error: '' });
+      } catch (e) { 
+        setBoot({ loading: false, needsSetup: false, error: e.message }); 
+      }
     })();
   }, [refreshSession]);
 

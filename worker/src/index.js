@@ -46,29 +46,35 @@ app.use('/api/*', async (c, next) => {
   c.header('Expires', '0');
 });
 
-// BYPASS AUTH - Auto-login as admin user
+// JWT Authentication middleware
 app.use('/api/*', async (c, next) => {
   const path = new URL(c.req.url).pathname;
-  // Skip auth middleware for setup and seed endpoints
-  if (/^\/api\/(health|setup|seed-demo|migrate-multi-tenant)/.test(path)) return next();
+  // Skip auth middleware for public endpoints
+  if (/^\/api\/(setup|auth\/login|seed-demo|migrate-multi-tenant|health-check)/.test(path)) return next();
   
-  // Create default user if doesn't exist
-  let user = await c.env.DB.prepare('SELECT id,name,email,phone,role,reg_no,active,pharmacy_id FROM users WHERE id=1').first();
-  if (!user) {
-    // Create pharmacy and user
-    try {
-      await c.env.DB.batch([
-        c.env.DB.prepare(`INSERT OR IGNORE INTO pharmacy (id,name) VALUES (1,'My Pharmacy')`),
-        c.env.DB.prepare(`INSERT OR IGNORE INTO users (id,name,email,role,active,password_hash,password_salt,pharmacy_id) VALUES (1,'Admin','admin@pharmacy.com','owner',1,'x','x',1)`)
-      ]);
-      user = { id: 1, name: 'Admin', email: 'admin@pharmacy.com', role: 'owner', active: 1, pharmacy_id: 1 };
-    } catch (e) {
-      console.error('Auto-setup failed:', e);
-    }
+  const authHeader = c.req.header('Authorization');
+  if (!authHeader?.startsWith('Bearer ')) {
+    return c.json({ error: 'Authentication required' }, 401);
   }
-  c.set('user', user);
-  c.set('pharmacy_id', user.pharmacy_id); // Set pharmacy context
-  return next();
+  
+  const token = authHeader.slice(7);
+  try {
+    const payload = await verifyJwt(token, c.env.JWT_SECRET || 'dev-secret-key-change-in-production');
+    const user = await c.env.DB.prepare(
+      'SELECT id,name,email,phone,role,reg_no,active,pharmacy_id FROM users WHERE id=? AND active=1'
+    ).bind(payload.sub).first();
+    
+    if (!user) {
+      return c.json({ error: 'User not found or inactive' }, 401);
+    }
+    
+    c.set('user', user);
+    c.set('pharmacy_id', user.pharmacy_id || 1);
+    return next();
+  } catch (err) {
+    console.error('Auth error:', err);
+    return c.json({ error: 'Invalid or expired token' }, 401);
+  }
 });
 
 app.get('/api/health', (c) => c.json({ ok: true }));
