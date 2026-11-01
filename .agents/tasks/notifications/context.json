@@ -1,0 +1,28 @@
+{
+  "project_type": "Multi-pharmacy management system: Cloudflare Worker (Hono) + D1 database for API, React (Vite) for web UI",
+  "language": "JavaScript (ES modules, no TypeScript)",
+  "build_system": "npm workspaces: root has worker code, web/ has React app. npm run build:web compiles web, wrangler handles Worker deployment",
+  "test_framework": "Manual smoke testing via scripts/smoke-test.mjs (80+ integration tests). No unit test framework present.",
+  "build_command": "npm run build:web (builds web UI into worker/public/)",
+  "test_command": "npm run test:api (runs scripts/smoke-test.mjs against local dev server)",
+  "verification_instructions": "1. Start dev server: npm run dev:api (port 8787). 2. Run smoke tests: npm run test:api. 3. Manual verification: open http://localhost:8787, log in as owner, check new features. 4. For web UI live dev: npm run dev:web (port 5173).",
+  "snapshot_or_generated_files": "None. Build output goes to worker/public/ but is not checked in.",
+  "environment_constraints": "Cloudflare D1 SQLite database. JWT auth via JWT_SECRET env var. No TypeScript compilation step. Worker uses Hono framework. ALTER TABLE has limitations (no dropping columns, careful with constraints). Multi-tenant architecture with pharmacy_id foreign keys.",
+  "contribution_requirements": "All routes follow existing patterns: need() middleware for role checks, body() for JSON parsing, q.* helpers for DB, audit() for logging. Notification system must respect multi-pharmacy owner architecture: is_system_owner flag determines if user manages multiple pharmacies. owner_user_id in pharmacy table links to owning user.",
+  "key_patterns": "Auth: c.get('user') gives user object, c.get('pharmacy_id') gives active pharmacy (or null for system owners), c.get('is_system_owner') boolean. DB access: q.all(), q.first(), q.run() from lib.js. Errors: throw bad(msg) for 400, new HttpError(status, msg) for others. Audit: await audit(db, user, action, entity, entityId, detail). Date handling: eatDate() for Kenya timezone YYYY-MM-DD, nowUtc() for UTC timestamps. Money: money() rounds to 2 decimals. API responses always return JSON. Web: useLoad() hook for data fetching, useToast() for notifications, Modal/Field/Badge/PageHead from ui.jsx. PharmacyContext provides selectedPharmacyId for system owners.",
+  "relevant_files": [
+    "worker/src/lib.js",
+    "worker/src/index.js",
+    "worker/src/routes-core.js",
+    "worker/src/routes-sales.js",
+    "worker/src/routes-stock.js",
+    "worker/src/routes-owner.js",
+    "worker/migrations/0003_multi_pharmacy_owner.sql",
+    "web/src/App.jsx",
+    "web/src/api.js",
+    "web/src/ui.jsx",
+    "web/src/contexts/PharmacyContext.jsx",
+    "web/src/pages/OwnerDashboard.jsx"
+  ],
+  "directory_structure": "Root: package.json (scripts), worker/ (API code), web/ (React UI). worker/src/: index.js (Hono app, auth middleware), routes-*.js (route handlers), lib.js (shared helpers). worker/migrations/: SQL files in sequence 0001_, 0002_, etc. web/src/: App.jsx (shell + routing), pages/ (screens), contexts/ (React context), components/ (reusable), ui.jsx (common components), api.js (fetch wrapper)."
+}

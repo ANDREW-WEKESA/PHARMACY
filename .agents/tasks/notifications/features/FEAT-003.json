@@ -1,0 +1,39 @@
+{
+  "id": "FEAT-003",
+  "type": "feat",
+  "description": "React notification context and bell component: create NotificationContext.jsx providing notifications list, unreadCount, criticalCount, fetchNotifications(), markAsRead(id), markAllAsRead(), with auto-refresh every 30 seconds when owner is logged in; create NotificationBell.jsx as header component showing bell icon with unread badge (red for critical, yellow for warnings, blue for info), dropdown with latest 10 notifications grouped by severity, View All link to full page; integrate into App.jsx header for system owners only.",
+  "status": "pending",
+  "steps": [
+    "Create web/src/contexts/NotificationContext.jsx: export NotificationProvider component that fetches from /api/owner/notifications every 30s using setInterval (only if user.is_system_owner && user.role === 'owner'), maintains state { notifications: [], unreadCount: 0, criticalCount: 0, loading, error }, provides fetchNotifications(), markAsRead(id) calls PUT /api/owner/notifications/:id/read, markAllAsRead() calls PUT /api/owner/notifications/mark-all-read. Use useEffect to set up interval and clean up on unmount. Export useNotifications() hook.",
+    "Create web/src/components/NotificationBell.jsx: Component receives no props, uses useNotifications() hook. Shows bell icon (🔔) with absolutely positioned Badge showing unreadCount (only if > 0). Badge color: red if criticalCount > 0, yellow if any warnings, blue otherwise. On click, shows dropdown (positioned absolute, z-index high) with: header 'Notifications', list of latest 10 notifications each showing type icon (🔴 critical, ⚠️ warning, ℹ️ info, 🔒 security), title, time ago (use util.js timeAgo or implement), click to mark as read. Footer with 'Mark All Read' button and 'View All' link to #/owner-notifications. Dropdown closes on click outside (useEffect with document click listener).",
+    "Update web/src/App.jsx: In Shell component, wrap children in NotificationProvider (after PharmacyProvider). In the mobile-bar div and desktop header area (add if needed), conditionally render <NotificationBell /> only if user.is_system_owner && user.role === 'owner'. Position bell in top-right of mobile-bar next to PharmacySwitcher, and in desktop header if exists (or add a header-actions div in sidebar).",
+    "Add route to NAV array in App.jsx: { id: 'owner-notifications', label: 'Notifications', icon: '🔔', roles: ['owner'], requiresSystemOwner: true, C: OwnerNotifications } (OwnerNotifications component will be in FEAT-004)."
+  ],
+  "acceptance_criteria": [
+    "NotificationContext.jsx provides all required state and functions via useNotifications() hook",
+    "Auto-refresh fetches notifications every 30 seconds for owners",
+    "NotificationBell.jsx shows bell with correct badge color based on notification severity",
+    "Dropdown shows latest 10 notifications with proper formatting and icons",
+    "Mark as read functionality works for individual notifications",
+    "Mark all read button works and refreshes notification list",
+    "Bell only appears for system owners with owner role",
+    "Clicking outside dropdown closes it",
+    "View All link navigates to owner-notifications page"
+  ],
+  "verification": [
+    "Start dev server: npm run dev:web (port 5173)",
+    "Log in as system owner",
+    "Verify bell icon appears in header with no badge if no notifications",
+    "Create test notification via API or trigger an event (e.g., void a sale)",
+    "Verify badge appears with correct count and color",
+    "Click bell, verify dropdown opens with notification listed",
+    "Click notification, verify it marks as read and badge updates",
+    "Click 'Mark All Read', verify all notifications marked and badge clears",
+    "Click 'View All', verify navigation to notifications page",
+    "Log in as non-owner or regular staff, verify bell does not appear",
+    "Check browser console for no errors",
+    "Verify auto-refresh: wait 30 seconds, create new notification, verify it appears without manual refresh"
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}

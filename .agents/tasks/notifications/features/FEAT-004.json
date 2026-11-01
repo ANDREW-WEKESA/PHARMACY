@@ -1,0 +1,46 @@
+{
+  "id": "FEAT-004",
+  "type": "feat",
+  "description": "Full notifications page with filters, search, and dashboard integration: create OwnerNotifications.jsx page with filter tabs (All/Unread/Critical/By Category/By Pharmacy), time grouping (Today/Yesterday/This Week/Older), search by title/message, mark read (individual and bulk selection), notification detail modal showing full message and metadata; update OwnerDashboard.jsx to add notification summary card showing unread/critical counts and link to notifications page, plus recent critical alerts section.",
+  "status": "pending",
+  "steps": [
+    "Create web/src/pages/OwnerNotifications.jsx: Component uses useNotifications() hook, useLoad() for initial fetch, state for filters { filter: 'all', category: 'all', pharmacyId: null, search: '' }, state for selectedIds Set for bulk actions. PageHead with title 'Notifications', search input, filter tabs using Tabs component from ui.jsx (All, Unread, Critical, Sales, Stock, Staff, Auth, Security, System), pharmacy dropdown if multiple pharmacies exist (use PharmacyContext.pharmacyList). Display notifications grouped by time: map notifications by date, render as 'Today', 'Yesterday', 'This Week', 'Older' sections. Each notification shows: type icon with color dot, title (bold if unread), message (truncated to 100 chars), time ago, pharmacy name if not null, checkbox for bulk select, click opens detail modal. Bulk actions bar (fixed bottom) shows when selectedIds.size > 0: 'X selected', 'Mark as Read' button, 'Cancel' button. Detail modal shows full title, full message, formatted metadata (if JSON parse succeeds, show as key-value pairs), created time, mark as read button if unread.",
+    "Implement time grouping helper: function groupByTime(notifications) that returns { today: [], yesterday: [], thisWeek: [], older: [] } based on created_at field. Use eatDate() equivalent in client (or pass date from server).",
+    "Implement search filtering: filter notifications by search term matching title or message (case-insensitive).",
+    "Update web/src/pages/OwnerDashboard.jsx: After the main stats grid, add a new section with two side-by-side cards (or grid g2): Left card 'Notification Summary' shows badges with unreadCount (blue), criticalCount (red), warningCount (yellow) from useNotifications() hook, button 'View All Notifications' links to #/owner-notifications. Right card 'Recent Critical Alerts' shows latest 5 critical notifications (filter x.notifications by type='critical', take first 5), each as a compact row with icon, title, time ago, click to view. If no critical alerts, show Empty component.",
+    "Style notifications page: Use existing table styles or card list. Unread notifications have bold title and light blue background. Critical notifications have red left border. Security notifications have lock icon. Each time group has a subheading (h3 or strong)."
+  ],
+  "acceptance_criteria": [
+    "OwnerNotifications.jsx renders full list of notifications with all specified features",
+    "Filter tabs correctly filter notifications by status, category, and pharmacy",
+    "Search input filters notifications by title/message in real-time",
+    "Time grouping correctly sorts notifications into Today/Yesterday/This Week/Older",
+    "Bulk selection allows marking multiple notifications as read at once",
+    "Detail modal shows full notification with metadata formatted",
+    "Individual mark as read works from list and from detail modal",
+    "OwnerDashboard.jsx shows notification summary card with correct counts",
+    "OwnerDashboard.jsx shows recent critical alerts section with latest 5 critical notifications",
+    "All links and navigation work correctly",
+    "Responsive design works on mobile and desktop"
+  ],
+  "verification": [
+    "Start web dev server: npm run dev:web",
+    "Log in as system owner, navigate to Dashboard",
+    "Verify notification summary card shows correct unread/critical counts",
+    "Verify recent critical alerts section shows latest critical notifications (or empty state)",
+    "Click 'View All Notifications', verify navigation to notifications page",
+    "On notifications page, verify all filter tabs work correctly",
+    "Test search: type in search box, verify notifications filter in real-time",
+    "Test pharmacy filter: select a pharmacy, verify only that pharmacy's notifications show",
+    "Test time grouping: verify notifications correctly grouped by time",
+    "Test bulk select: check multiple notifications, click 'Mark as Read', verify all marked",
+    "Test detail modal: click a notification, verify modal opens with full details",
+    "Test mark as read from modal: click 'Mark as Read' in modal, verify notification marked and modal closes",
+    "Create new critical notification (e.g., failed login), verify it appears in dashboard critical alerts section",
+    "Test responsive: resize browser to mobile width, verify layout adapts correctly",
+    "Verify no console errors",
+    "Run full smoke tests: npm run test:api (should still pass)"
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}

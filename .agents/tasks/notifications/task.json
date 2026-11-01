@@ -1,0 +1,12 @@
+{
+  "task_id": "task-notifications",
+  "task_description": "Implement comprehensive owner notification system for multi-pharmacy platform: DB migration, notification service with abnormal activity detection, API endpoints, React context/UI components, integration into existing routes for sales/stock/auth/staff events",
+  "status": "pending",
+  "feature_order": [
+    "FEAT-001",
+    "FEAT-002",
+    "FEAT-003",
+    "FEAT-004"
+  ],
+  "blocked_reason": null
+}
