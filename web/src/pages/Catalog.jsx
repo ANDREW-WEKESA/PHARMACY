@@ -14,12 +14,47 @@ export default function Catalog({ user }) {
   const r = useLoad(() => get('/drugs' + qs({ q: dq, class: cls, active: showInactive ? 'all' : '', limit: 500 })), [dq, cls, showInactive]);
   const [edit, setEdit] = useState(null); const [view, setView] = useState(null); const [importing, setImporting] = useState(false);
   const drugs = r.data?.drugs || [];
+  
+  // Calculate summary statistics
+  const totalDrugs = drugs.length;
+  const inStockCount = drugs.filter(d => d.stock_units > 0).length;
+  const outOfStockCount = drugs.filter(d => d.stock_units === 0).length;
+  const lowStockCount = drugs.filter(d => d.stock_units > 0 && d.stock_units <= d.reorder_level).length;
+  const totalStockValue = drugs.reduce((sum, d) => sum + (d.stock_units * (d.selling_price / d.pack_size)), 0);
+  
   const exportCsv = () => download('drug-catalog.csv', toCSV(drugs, ['brand_name', 'generic_name', 'strength', 'dosage_form', 'pack_size', 'unit_name', 'allow_split', 'category', 'manufacturer', 'barcode', 'drug_class', 'buying_price', 'selling_price', 'vat_applicable', 'reorder_level'].map((k) => ({ label: k, key: k }))));
   return (
     <>
       <PageHead icon="📖" title="Drug Catalog" sub="Every drug the pharmacy sells, with prices and rules">
         {canEdit && <><button className="btn ghost" onClick={() => setImporting(true)}>⬆ Import CSV</button><button className="btn primary" onClick={() => setEdit({ ...BLANK })}>+ Add drug</button></>}
       </PageHead>
+      
+      {/* Summary Statistics */}
+      {drugs.length > 0 && (
+        <div className="grid g4" style={{ marginBottom: 18 }}>
+          <div className="stat">
+            <span>Total Drugs</span>
+            <strong style={{ fontSize: 28, color: 'var(--p1)' }}>{totalDrugs}</strong>
+            <small>in catalog</small>
+          </div>
+          <div className="stat good">
+            <span>In Stock</span>
+            <strong style={{ fontSize: 28, color: 'var(--ok)' }}>{inStockCount}</strong>
+            <small>{((inStockCount/totalDrugs)*100).toFixed(0)}% available</small>
+          </div>
+          <div className="stat" style={{ background: outOfStockCount > 0 ? 'var(--badbg)' : 'var(--card)' }}>
+            <span>Out of Stock</span>
+            <strong style={{ fontSize: 28, color: 'var(--bad)' }}>{outOfStockCount}</strong>
+            <small>need restocking</small>
+          </div>
+          <div className="stat" style={{ background: lowStockCount > 0 ? 'var(--warnbg)' : 'var(--card)' }}>
+            <span>Low Stock Alert</span>
+            <strong style={{ fontSize: 28, color: 'var(--warn)' }}>{lowStockCount}</strong>
+            <small>below reorder level</small>
+          </div>
+        </div>
+      )}
+      
       <div className="glass"><div className="toolbar" style={{ marginBottom: 0 }}>
         <div className="searchbox grow"><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="🔍 Search brand, generic, category or scan barcode" aria-label="Search drugs" /></div>
         <select value={cls} onChange={(e) => setCls(e.target.value)} aria-label="Drug class" style={{ background: '#1f2340', color: '#fff', border: 'none' }}><option value="">All classes</option>{Object.entries(CLASS_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
@@ -28,19 +63,44 @@ export default function Catalog({ user }) {
       </div></div>
       <ErrorBox error={r.error} retry={r.reload} />
       {r.loading && !r.data ? <Spinner /> : drugs.length === 0 ? <div className="glass"><Empty icon="📖" title="No drugs found" sub={canEdit ? 'Add your first drug or import a CSV list.' : 'Ask the pharmacist to add drugs.'} /></div> :
-        <div className="card"><div className="table-wrap"><table><thead><tr><th>Drug</th><th>Class</th><th className="r">Pack</th><th className="r">Price / pack</th><th className="r">In stock</th><th>Next expiry</th></tr></thead><tbody>
+        <div className="card"><div className="table-wrap"><table><thead><tr><th>Drug</th><th>Class</th><th className="r">Pack Size</th><th className="r">Price / pack</th><th className="r">Stock Quantity</th><th className="r">Status</th><th>Next Expiry</th></tr></thead><tbody>
           {drugs.map((d) => {
             const stockStatus = getStockStatus(d.stock_units, d.reorder_level);
+            const totalPacks = Math.floor(d.stock_units / d.pack_size);
+            const looseUnits = d.stock_units % d.pack_size;
+            
             return <tr key={d.id} className="clickable" tabIndex={0} onClick={() => setView(d.id)} onKeyDown={(e) => e.key === 'Enter' && setView(d.id)} style={!d.active ? { opacity: .55 } : null}>
-              <td><strong>{d.brand_name}</strong> {d.strength}{!d.active && <> <Badge>Deactivated</Badge></>}<div className="sub">{d.generic_name} {d.dosage_form && '· ' + d.dosage_form}</div></td>
-              <td>{classBadge(d.drug_class)}</td><td className="r">{d.pack_size}</td><td className="r mono">{KES(d.selling_price)}</td>
-              <td className="r mono">
-                <Badge className={stockStatus.color}>
+              <td>
+                <strong>{d.brand_name}</strong> {d.strength}
+                {!d.active && <> <Badge>Deactivated</Badge></>}
+                <div className="sub">{d.generic_name} {d.dosage_form && '· ' + d.dosage_form}</div>
+              </td>
+              <td>{classBadge(d.drug_class)}</td>
+              <td className="r">{d.pack_size} units</td>
+              <td className="r mono">{KES(d.selling_price)}</td>
+              <td className="r">
+                <strong style={{ fontSize: '16px', color: d.stock_units === 0 ? 'var(--bad)' : d.stock_units <= d.reorder_level ? 'var(--warn)' : 'var(--ok)' }}>
+                  {num(d.stock_units)} units
+                </strong>
+                <div className="sub">
+                  {totalPacks > 0 && `${totalPacks} packs`}
+                  {totalPacks > 0 && looseUnits > 0 && ' + '}
+                  {looseUnits > 0 && `${looseUnits} loose`}
+                  {d.stock_units === 0 && 'Out of stock'}
+                </div>
+              </td>
+              <td className="r">
+                <Badge className={stockStatus.color} style={{ fontWeight: 600 }}>
                   {stockStatus.label}
                 </Badge>
-                <div className="sub">{packsText(d.stock_units, d)}</div>
+                {d.reorder_level > 0 && (
+                  <div className="sub">Reorder at {d.reorder_level}</div>
+                )}
               </td>
-              <td>{d.next_expiry ? fmtDate(d.next_expiry) : '—'}{d.expired_units > 0 && <div className="sub" style={{ color: 'var(--bad)' }}>{d.expired_units} expired on shelf</div>}</td>
+              <td>
+                {d.next_expiry ? fmtDate(d.next_expiry) : '—'}
+                {d.expired_units > 0 && <div className="sub" style={{ color: 'var(--bad)' }}>{d.expired_units} expired</div>}
+              </td>
             </tr>;
           })}
         </tbody></table></div></div>}
@@ -54,15 +114,38 @@ export default function Catalog({ user }) {
 function DrugView({ id, canEdit, onClose, onEdit, onPick }) {
   const r = useLoad(() => get('/drugs/' + id), [id]);
   const x = r.data; const d = x?.drug;
+  
+  // Calculate total stock across all batches
+  const totalStock = x?.batches?.reduce((sum, b) => sum + b.qty_units, 0) || 0;
+  const activeBatches = x?.batches?.filter(b => b.qty_units > 0).length || 0;
+  const stockValue = totalStock * (d?.selling_price || 0) / (d?.pack_size || 1);
+  
   return (
     <Modal title={d ? `${d.brand_name} ${d.strength || ''}` : 'Drug'} wide onClose={onClose} footer={d && canEdit && <button className="btn primary" onClick={() => onEdit(d)}>Edit drug</button>}>
       {r.loading && !x && <Spinner />}<ErrorBox error={r.error} />
       {d && <div className="grid g2">
-        <div><table><tbody>
+        <div>
+          {/* Stock Summary Card */}
+          <div style={{ background: 'var(--okbg)', padding: 16, borderRadius: 12, marginBottom: 16, border: '2px solid var(--ok)' }}>
+            <h3 style={{ fontSize: 14, color: 'var(--ok)', marginBottom: 8 }}>📦 CURRENT STOCK</h3>
+            <div style={{ fontSize: 32, fontWeight: 700, color: 'var(--ok)', marginBottom: 4 }}>
+              {num(totalStock)} units
+            </div>
+            <div style={{ fontSize: 14, color: 'var(--muted)' }}>
+              {activeBatches} active batch{activeBatches !== 1 ? 'es' : ''} • Worth {KES(stockValue)}
+            </div>
+            {d.reorder_level > 0 && (
+              <div style={{ marginTop: 8, fontSize: 13, color: totalStock <= d.reorder_level ? 'var(--bad)' : 'var(--ok)' }}>
+                {totalStock <= d.reorder_level ? '⚠️ Below reorder level' : '✓ Stock level OK'} (Reorder at {d.reorder_level})
+              </div>
+            )}
+          </div>
+          
+          <table><tbody>
           {[['Generic name', d.generic_name], ['Dosage form', d.dosage_form], ['Class', classBadge(d.drug_class)], ['Category', d.category], ['Manufacturer', d.manufacturer], ['Barcode', d.barcode], ['Pack size', `${d.pack_size} ${d.unit_name === 'pack' ? 'units' : d.unit_name + 's'}${d.allow_split ? ' (can sell loose)' : ' (whole packs only)'}`], ['Storage', d.storage], ['Buying price / pack', KES(d.buying_price)], ['Selling price / pack', KES(d.selling_price)], ['Margin', d.selling_price ? Math.round(((d.selling_price - d.buying_price) / d.selling_price) * 100) + '%' : '—'], ['VAT', d.vat_applicable ? 'Taxable' : 'Exempt / zero-rated'], ['Reorder level', d.reorder_level + ' units'], ['Notes', d.notes]].map(([k, v]) => v ? <tr key={k}><td className="sub" style={{ width: 150 }}>{k}</td><td>{v}</td></tr> : null)}
         </tbody></table></div>
         <div>
-          <h3>Stock by batch</h3>
+          <h3>Stock by batch (showing {activeBatches} active)</h3>
           {x.batches.filter((b) => b.qty_units > 0).length === 0 ? <p className="sub">No stock on hand.</p> : <table><thead><tr><th>Batch</th><th>Expiry</th><th className="r">Units</th></tr></thead><tbody>{x.batches.filter((b) => b.qty_units > 0).map((b) => <tr key={b.id}><td>{b.batch_no}</td><td>{fmtDate(b.expiry_date)}</td><td className="r">{b.qty_units}</td></tr>)}</tbody></table>}
           {x.alternatives.length > 0 && <><h3 style={{ marginTop: 16 }}>Other brands of {d.generic_name}</h3>{x.alternatives.map((a) => <div key={a.id} className="pos-item" tabIndex={0} onClick={() => onPick(a.id)} onKeyDown={(e) => e.key === 'Enter' && onPick(a.id)}><span>{a.brand_name} {a.strength}</span><strong>{KES(a.selling_price)}</strong></div>)}</>}
           {x.prices.length > 1 && <><h3 style={{ marginTop: 16 }}>Price history</h3><table><tbody>{x.prices.slice(0, 6).map((p) => <tr key={p.id}><td className="sub">{eatTime(p.changed_at, true)}</td><td className="r">Buy {KES(p.buying_price)}</td><td className="r">Sell {KES(p.selling_price)}</td></tr>)}</tbody></table></>}
