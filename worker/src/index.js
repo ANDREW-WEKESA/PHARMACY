@@ -6,6 +6,8 @@ import sales from './routes-sales.js';
 import reports from './routes-reports.js';
 import ownerRoutes from './routes-owner.js';
 import notificationRoutes from './routes-notifications.js';
+import backupRoutes from './routes-backup.js';
+import { runWeeklyBackup } from './backup-service.js';
 
 const app = new Hono();
 
@@ -100,7 +102,8 @@ app.route('/api', stock);
 app.route('/api', sales);
 app.route('/api', reports);
 app.route('/api/owner', ownerRoutes);
-app.route('/api/owner', notificationRoutes);
+app.route('/api/owner/notifications', notificationRoutes);
+app.route('/api/backup', backupRoutes);
 
 app.notFound((c) => c.json({ error: 'Not found' }, 404));
 app.onError((err, c) => {
@@ -109,4 +112,12 @@ app.onError((err, c) => {
   return c.json({ error: 'Something went wrong on the server.' }, 500);
 });
 
-export default app;
+// Scheduled backup handler (runs weekly)
+export default {
+  fetch: app.fetch,
+  async scheduled(event, env, ctx) {
+    console.log('🔄 Running scheduled weekly backup...');
+    const result = await runWeeklyBackup(env);
+    console.log('✅ Backup completed:', result);
+  }
+};

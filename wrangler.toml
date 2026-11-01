@@ -2,6 +2,10 @@ name = "pharmacy-standalone"
 main = "worker/src/index.js"
 compatibility_date = "2025-01-01"
 
+# Automated weekly backup - runs every Sunday at 2 AM
+[triggers]
+crons = ["0 2 * * 0"]
+
 [assets]
 directory = "./web/dist"
 binding = "ASSETS"
@@ -13,6 +17,12 @@ binding = "DB"
 database_name = "pharmacy-db-prod"
 database_id = "547bfb4d-1ae1-4fb5-bc47-475e4f273bb1"
 migrations_dir = "worker/migrations"
+
+# Optional: R2 bucket for backup storage
+# Uncomment and configure if you want to store backups in R2
+# [[r2_buckets]]
+# binding = "BACKUP_BUCKET"
+# bucket_name = "pharmacy-backups"
 
 # Secrets are NOT stored here. Set the JWT secret with:
 #   npx wrangler secret put JWT_SECRET
