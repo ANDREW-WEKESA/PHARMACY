@@ -6,12 +6,15 @@ let onUnauthorized = () => {};
 export const setUnauthorizedHandler = (fn) => { onUnauthorized = fn; };
 
 export async function api(method, path, body) {
-  const token = 'bypass'; // Always use bypass token
+  const token = getToken(); // Get token from localStorage
   let res;
   try {
     res = await fetch('/api' + path, {
       method,
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      headers: { 
+        'Content-Type': 'application/json', 
+        ...(token ? { Authorization: 'Bearer ' + token } : {})
+      },
       body: body ? JSON.stringify(body) : undefined,
     });
   } catch {
@@ -19,6 +22,10 @@ export async function api(method, path, body) {
   }
   let data = null;
   try { data = await res.json(); } catch {}
+  if (res.status === 401) {
+    onUnauthorized();
+    throw Object.assign(new Error('Your session has expired. Please sign in again.'), { status: 401, data });
+  }
   if (!res.ok) throw Object.assign(new Error(data?.error || `Request failed (${res.status})`), { status: res.status, data });
   return data;
 }
