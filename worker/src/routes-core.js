@@ -93,7 +93,7 @@ app.post('/auth/change-password', async (c) => {
   return c.json({ ok: true });
 });
 
-// Password reset request (placeholder - would need email service)
+// Password reset request - Generate token and send email
 app.post('/auth/reset-password-request', async (c) => {
   const b = await body(c);
   const email = str(b.email, 120).toLowerCase();
@@ -102,16 +102,117 @@ app.post('/auth/reset-password-request', async (c) => {
   const u = await q.first(c.env.DB, 'SELECT id,name,email FROM users WHERE lower(email)=?', email);
   
   // Always return success to prevent email enumeration
-  // In production, you would send an actual email here
-  await new Promise(resolve => setTimeout(resolve, 500)); // Simulate email delay
+  await new Promise(resolve => setTimeout(resolve, 500)); // Simulate processing
   
   if (u) {
-    // TODO: Generate reset token and send email
-    // For now, just log the request
-    await audit(c.env.DB, null, 'password_reset_requested', 'user', u.id, email);
+    // Generate reset token (valid for 1 hour)
+    const resetToken = crypto.randomUUID();
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString(); // 1 hour
+    
+    // Store token in database (you'd need a password_resets table)
+    // For now, we'll create a temporary token in audit log
+    await audit(c.env.DB, null, 'password_reset_requested', 'user', u.id, JSON.stringify({ 
+      email, 
+      token: resetToken, 
+      expires: expiresAt 
+    }));
+    
+    // Send email using MailChannels (free on Cloudflare)
+    // Check if MAILCHANNELS is configured
+    if (c.env.SEND_EMAIL === 'true') {
+      const resetLink = `${new URL(c.req.url).origin}/reset-password?token=${resetToken}`;
+      
+      try {
+        await fetch('https://api.mailchannels.net/tx/v1/send', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            personalizations: [{ to: [{ email: u.email, name: u.name }] }],
+            from: { email: c.env.FROM_EMAIL || 'noreply@pharmacy.com', name: 'Pharmacy System' },
+            subject: 'Password Reset Request',
+            content: [{
+              type: 'text/html',
+              value: `
+                <div style="font-family: 'Inter', Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                  <h2 style="color: #667eea;">Password Reset Request</h2>
+                  <p>Hi ${u.name},</p>
+                  <p>You requested to reset your password. Click the button below to reset it:</p>
+                  <div style="text-align: center; margin: 30px 0;">
+                    <a href="${resetLink}" style="background: linear-gradient(135deg, #667eea, #764ba2); color: white; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: 600; display: inline-block;">Reset Password</a>
+                  </div>
+                  <p>Or copy this link: <a href="${resetLink}">${resetLink}</a></p>
+                  <p style="color: #666; font-size: 14px;">This link expires in 1 hour.</p>
+                  <p style="color: #666; font-size: 14px;">If you didn't request this, please ignore this email.</p>
+                  <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;">
+                  <p style="color: #999; font-size: 12px;">Pharmacy Management System</p>
+                </div>
+              `
+            }]
+          })
+        });
+      } catch (err) {
+        console.error('Email send failed:', err);
+        // Don't throw error to prevent email enumeration
+      }
+    } else {
+      // Development mode: log the reset link
+      console.log(`Password reset link for ${u.email}: /reset-password?token=${resetToken}`);
+    }
   }
   
   return c.json({ ok: true, message: 'If an account exists with that email, a reset link has been sent.' });
+});
+
+// Complete password reset with token
+app.post('/auth/reset-password-complete', async (c) => {
+  const b = await body(c);
+  const token = str(b.token, 120);
+  const newPassword = String(b.password || '');
+  
+  if (!token) throw bad('Reset token is required');
+  if (newPassword.length < 8) throw bad('Password must be at least 8 characters');
+  
+  // Find the reset request in audit log
+  const resetRequest = await q.first(c.env.DB, 
+    `SELECT * FROM audit_log 
+     WHERE action='password_reset_requested' 
+     AND detail LIKE ? 
+     AND created_at >= datetime('now', '-1 hour')
+     ORDER BY id DESC LIMIT 1`,
+    `%"token":"${token}"%`
+  );
+  
+  if (!resetRequest) {
+    throw new HttpError(400, 'Invalid or expired reset token');
+  }
+  
+  const detail = JSON.parse(resetRequest.detail);
+  const userId = resetRequest.entity_id;
+  
+  // Check if already used
+  const alreadyUsed = await q.first(c.env.DB,
+    `SELECT id FROM audit_log 
+     WHERE action='password_reset_completed' 
+     AND detail LIKE ?`,
+    `%"token":"${token}"%`
+  );
+  
+  if (alreadyUsed) {
+    throw new HttpError(400, 'This reset link has already been used');
+  }
+  
+  // Update password
+  const { hash, salt } = await hashPassword(newPassword);
+  await q.run(c.env.DB, 
+    'UPDATE users SET password_hash=?, password_salt=? WHERE id=?', 
+    hash, salt, userId
+  );
+  
+  // Mark as completed
+  const user = await q.first(c.env.DB, 'SELECT * FROM users WHERE id=?', userId);
+  await audit(c.env.DB, user, 'password_reset_completed', 'user', userId, JSON.stringify({ token }));
+  
+  return c.json({ ok: true, message: 'Password reset successfully. You can now login.' });
 });
 
 // ---------- users (owner) ----------
