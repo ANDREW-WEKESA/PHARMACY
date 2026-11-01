@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { get, post, put, qs } from '../api.js';
-import { KES, num, fmtDate, CLASS_LABEL, packsText, toCSV, download, parseCSV, eatTime } from '../util.js';
+import { KES, num, fmtDate, CLASS_LABEL, packsText, toCSV, download, parseCSV, eatTime, getStockStatus } from '../util.js';
 import { PageHead, Spinner, ErrorBox, useLoad, useDebounced, Empty, Badge, Modal, Field, useToast } from '../ui.jsx';
 
 const BLANK = { brand_name: '', generic_name: '', strength: '', dosage_form: 'Tablet', pack_size: 1, unit_name: 'pack', allow_split: false, category: '', manufacturer: '', barcode: '', drug_class: 'OTC', storage: '', buying_price: '', selling_price: '', vat_applicable: false, reorder_level: 10, preferred_supplier_id: '', notes: '' };
@@ -29,11 +29,20 @@ export default function Catalog({ user }) {
       <ErrorBox error={r.error} retry={r.reload} />
       {r.loading && !r.data ? <Spinner /> : drugs.length === 0 ? <div className="glass"><Empty icon="📖" title="No drugs found" sub={canEdit ? 'Add your first drug or import a CSV list.' : 'Ask the pharmacist to add drugs.'} /></div> :
         <div className="card"><div className="table-wrap"><table><thead><tr><th>Drug</th><th>Class</th><th className="r">Pack</th><th className="r">Price / pack</th><th className="r">In stock</th><th>Next expiry</th></tr></thead><tbody>
-          {drugs.map((d) => <tr key={d.id} className="clickable" tabIndex={0} onClick={() => setView(d.id)} onKeyDown={(e) => e.key === 'Enter' && setView(d.id)} style={!d.active ? { opacity: .55 } : null}>
-            <td><strong>{d.brand_name}</strong> {d.strength}{!d.active && <> <Badge>Deactivated</Badge></>}<div className="sub">{d.generic_name} {d.dosage_form && '· ' + d.dosage_form}</div></td>
-            <td>{classBadge(d.drug_class)}</td><td className="r">{d.pack_size}</td><td className="r mono">{KES(d.selling_price)}</td>
-            <td className="r mono">{d.stock_units <= 0 ? <Badge kind="bad">Out</Badge> : d.stock_units <= d.reorder_level ? <Badge kind="warn">{packsText(d.stock_units, d)}</Badge> : packsText(d.stock_units, d)}</td>
-            <td>{d.next_expiry ? fmtDate(d.next_expiry) : '—'}{d.expired_units > 0 && <div className="sub" style={{ color: 'var(--bad)' }}>{d.expired_units} expired on shelf</div>}</td></tr>)}
+          {drugs.map((d) => {
+            const stockStatus = getStockStatus(d.stock_units, d.reorder_level);
+            return <tr key={d.id} className="clickable" tabIndex={0} onClick={() => setView(d.id)} onKeyDown={(e) => e.key === 'Enter' && setView(d.id)} style={!d.active ? { opacity: .55 } : null}>
+              <td><strong>{d.brand_name}</strong> {d.strength}{!d.active && <> <Badge>Deactivated</Badge></>}<div className="sub">{d.generic_name} {d.dosage_form && '· ' + d.dosage_form}</div></td>
+              <td>{classBadge(d.drug_class)}</td><td className="r">{d.pack_size}</td><td className="r mono">{KES(d.selling_price)}</td>
+              <td className="r mono">
+                <Badge className={stockStatus.color}>
+                  {stockStatus.label}
+                </Badge>
+                <div className="sub">{packsText(d.stock_units, d)}</div>
+              </td>
+              <td>{d.next_expiry ? fmtDate(d.next_expiry) : '—'}{d.expired_units > 0 && <div className="sub" style={{ color: 'var(--bad)' }}>{d.expired_units} expired on shelf</div>}</td>
+            </tr>;
+          })}
         </tbody></table></div></div>}
       {view && <DrugView id={view} canEdit={canEdit} onClose={() => setView(null)} onEdit={(d) => { setView(null); setEdit({ ...d, preferred_supplier_id: d.preferred_supplier_id || '' }); }} onPick={setView} />}
       {edit && <DrugForm initial={edit} onClose={() => setEdit(null)} onDone={() => { setEdit(null); toast('Drug saved'); r.reload(); }} />}

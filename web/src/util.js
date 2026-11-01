@@ -92,3 +92,19 @@ export function toExcel(rows, columns, sheetName = 'Sheet1') {
 export function downloadExcel(name, xmlContent) {
   download(name, xmlContent, 'application/vnd.ms-excel');
 }
+
+// Status badge utilities for visual indicators
+export function getExpiryStatus(expiryDate) {
+  const days = daysUntil(expiryDate);
+  if (days < 0) return { level: 'expired', color: 'bg-red-100 text-red-800', label: 'Expired' };
+  if (days <= 30) return { level: 'critical', color: 'bg-orange-100 text-orange-800', label: `${days}d left` };
+  if (days <= 90) return { level: 'warning', color: 'bg-yellow-100 text-yellow-800', label: `${days}d` };
+  return { level: 'ok', color: 'bg-green-100 text-green-800', label: 'OK' };
+}
+
+export function getStockStatus(stockUnits, reorderLevel) {
+  if (stockUnits === 0) return { level: 'out', color: 'bg-red-100 text-red-800', label: 'Out of stock' };
+  if (stockUnits <= reorderLevel * 0.5) return { level: 'critical', color: 'bg-orange-100 text-orange-800', label: 'Critical' };
+  if (stockUnits <= reorderLevel) return { level: 'low', color: 'bg-yellow-100 text-yellow-800', label: 'Low stock' };
+  return { level: 'ok', color: 'bg-green-100 text-green-800', label: 'In stock' };
+}
