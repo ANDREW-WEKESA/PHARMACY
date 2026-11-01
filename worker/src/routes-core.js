@@ -364,4 +364,44 @@ app.get('/stock-alerts', async (c) => {
   return c.json({ alerts, summary });
 });
 
+// System health check
+app.get('/health-check', async (c) => {
+  const pharmacy_id = c.get('pharmacy_id');
+  const start = Date.now();
+  
+  try {
+    // Check database connectivity
+    const dbCheck = await q.first(c.env.DB, 'SELECT 1 as ok');
+    const dbLatency = Date.now() - start;
+    
+    // Get system stats
+    const stats = await c.env.DB.batch([
+      q.stmt(c.env.DB, 'SELECT COUNT(*) as count FROM drugs WHERE pharmacy_id = ? AND active = 1', pharmacy_id),
+      q.stmt(c.env.DB, 'SELECT COUNT(*) as count FROM sales WHERE pharmacy_id = ? AND created_at >= date("now", "-30 days")', pharmacy_id),
+      q.stmt(c.env.DB, 'SELECT COUNT(*) as count FROM users WHERE pharmacy_id = ? AND active = 1', pharmacy_id),
+    ]);
+    
+    return c.json({
+      status: 'healthy',
+      timestamp: nowUtc(),
+      database: {
+        connected: !!dbCheck,
+        latency_ms: dbLatency
+      },
+      stats: {
+        active_drugs: stats[0].results[0].count,
+        sales_last_30_days: stats[1].results[0].count,
+        active_users: stats[2].results[0].count
+      },
+      uptime: 'operational'
+    });
+  } catch (e) {
+    return c.json({
+      status: 'unhealthy',
+      error: e.message,
+      timestamp: nowUtc()
+    }, 500);
+  }
+});
+
 export default app;
