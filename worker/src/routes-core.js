@@ -289,4 +289,79 @@ app.post('/seed-demo', async (c) => {
   }
 });
 
+// Get expiry alerts - color coded notifications
+app.get('/expiry-alerts', async (c) => {
+  const pharmacy_id = c.get('pharmacy_id');
+  const today = new Date().toISOString().split('T')[0];
+  
+  // Get drugs expiring in next 90 days
+  const alerts = await q.all(c.env.DB, `
+    SELECT 
+      d.id,
+      d.brand_name,
+      d.generic_name,
+      b.batch_no,
+      b.expiry_date,
+      b.qty_units,
+      CAST((julianday(b.expiry_date) - julianday(?)) AS INTEGER) as days_until_expiry,
+      CASE 
+        WHEN julianday(b.expiry_date) < julianday(?) THEN 'expired'
+        WHEN julianday(b.expiry_date) - julianday(?) <= 30 THEN 'critical'
+        WHEN julianday(b.expiry_date) - julianday(?) <= 90 THEN 'warning'
+        ELSE 'ok'
+      END as alert_level
+    FROM drugs d
+    JOIN batches b ON d.id = b.drug_id
+    WHERE d.pharmacy_id = ? 
+      AND b.active = 1 
+      AND b.qty_units > 0
+      AND julianday(b.expiry_date) - julianday(?) <= 90
+    ORDER BY b.expiry_date ASC
+  `, today, today, today, today, pharmacy_id, today);
+  
+  const summary = {
+    expired: alerts.filter(a => a.alert_level === 'expired').length,
+    critical: alerts.filter(a => a.alert_level === 'critical').length,
+    warning: alerts.filter(a => a.alert_level === 'warning').length,
+    total: alerts.length
+  };
+  
+  return c.json({ alerts, summary });
+});
+
+// Get low stock alerts
+app.get('/stock-alerts', async (c) => {
+  const pharmacy_id = c.get('pharmacy_id');
+  
+  const alerts = await q.all(c.env.DB, `
+    SELECT 
+      d.id,
+      d.brand_name,
+      d.generic_name,
+      d.stock_units,
+      d.reorder_level,
+      d.pack_size,
+      CASE 
+        WHEN d.stock_units = 0 THEN 'out_of_stock'
+        WHEN d.stock_units <= d.reorder_level * 0.5 THEN 'critical'
+        WHEN d.stock_units <= d.reorder_level THEN 'low'
+        ELSE 'ok'
+      END as alert_level
+    FROM drugs d
+    WHERE d.pharmacy_id = ? 
+      AND d.active = 1
+      AND d.stock_units <= d.reorder_level
+    ORDER BY d.stock_units ASC
+  `, pharmacy_id);
+  
+  const summary = {
+    out_of_stock: alerts.filter(a => a.alert_level === 'out_of_stock').length,
+    critical: alerts.filter(a => a.alert_level === 'critical').length,
+    low: alerts.filter(a => a.alert_level === 'low').length,
+    total: alerts.length
+  };
+  
+  return c.json({ alerts, summary });
+});
+
 export default app;
