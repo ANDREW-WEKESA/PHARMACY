@@ -2,29 +2,23 @@
   "verdict": "CHANGES_REQUESTED",
   "findings": [
     {
-      "severity": "MEDIUM",
-      "file": "components/PharmacySwitcher.jsx",
-      "issue": "PharmacySwitcher stores selection but doesn't filter any view - selectedPharmacyId is persisted to localStorage but no component reads it to filter API calls or UI",
-      "suggestion": "Either wire it to backend endpoints that accept pharmacy_id parameter, or add UI indicator that it's non-functional until backend support is added"
+      "severity": "HIGH",
+      "file": "web/src/components/PharmacySwitcher.jsx",
+      "issue": "PharmacySwitcher stores selection in localStorage but no component uses selectedPharmacyId to filter API calls or UI. The switcher appears functional but has no effect, misleading users into thinking they're viewing filtered data.",
+      "suggestion": "Either wire selectedPharmacyId to backend endpoints that support pharmacy_id filtering, add a UI note that filtering is 'coming soon,' or remove the switcher until backend support is ready."
     },
     {
       "severity": "LOW",
-      "file": "pages/StaffManagement.jsx",
-      "issue": "Password field in StaffForm uses unconditional autocomplete=\"new-password\" even in edit mode when the field is optional",
-      "suggestion": "Use conditional autocomplete: autoComplete={f.id ? \"off\" : \"new-password\"} to prevent browser password save prompts on edit forms"
+      "file": "web/src/pages/StaffManagement.jsx",
+      "issue": "Filter dropdown explicitly sets padding: '8px 12px' while search input relies on default padding, creating minor style inconsistency despite both meeting 44px touch target requirement.",
+      "suggestion": "Remove padding: '8px 12px' from filter dropdown inline styles and let both inputs use consistent CSS."
     },
     {
       "severity": "MEDIUM",
-      "file": "pages/StaffManagement.jsx",
-      "issue": "StaffForm allows assigning pharmacy to owner role - pharmacy assignment dropdown renders even when role could be 'owner', but owners should not be assigned to specific pharmacies in multi-pharmacy setup",
-      "suggestion": "Disable or hide the pharmacy assignment dropdown when f.role === 'owner', or show helper text explaining owners are not pharmacy-specific"
-    },
-    {
-      "severity": "LOW",
-      "file": "contexts/PharmacyContext.jsx",
-      "issue": "PharmacyContext missing fallback for undefined user - logs warning but continues with isSystemOwner=false and empty pharmacyList, making it impossible to distinguish initialization failure from non-system-owner",
-      "suggestion": "Add loading or error state to the context return value to allow consumers to handle initialization failure explicitly"
+      "file": "web/src/contexts/PharmacyContext.jsx",
+      "issue": "PharmacyProvider uses defensive fallback (user?.is_system_owner) that silently degrades to isSystemOwner=false when user is undefined, potentially masking integration errors where user arrives late or is accidentally null.",
+      "suggestion": "Consider making the error explicit (throw or return early when user is missing) or expose a dedicated initError field to signal that the context failed to initialize due to missing user prop."
     }
   ],
-  "reviewDoc": "c:\\dev\\pharmacy-standalone\\.agents\\tasks\\multi-pharmacy-owner\\review.md"
+  "reviewDoc": "c:\\dev\\pharmacy-standalone\\.agents\\tasks\\multi-pharmacy-owner\\2025-01-15-090000-review.md"
 }
