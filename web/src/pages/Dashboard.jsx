@@ -2,6 +2,7 @@ import { get } from '../api.js';
 import { KES, num, fmtDate, daysUntil, METHOD_LABEL, ROLE_LABEL } from '../util.js';
 import { PageHead, Spinner, ErrorBox, useLoad, Empty, Badge, Tabs } from '../ui.jsx';
 import { useState } from 'react';
+import { NotificationCenter } from '../components/NotificationCenter.jsx';
 
 function Bars({ rows }) {
   const max = Math.max(1, ...rows.map((r) => r.total));
@@ -20,8 +21,17 @@ export default function Dashboard({ user, go }) {
   const d = useLoad(() => get('/dashboard'));
   const canStock = user.role !== 'cashier';
   const a = useLoad(() => (canStock ? get('/stock/alerts') : Promise.resolve(null)));
+  const expiry = useLoad(() => get('/expiry-alerts'), []);
+  const stockAlerts = useLoad(() => get('/stock-alerts'), []);
   const [topTab, setTopTab] = useState('day');
   const [expTab, setExpTab] = useState('d30');
+  const [showNotifications, setShowNotifications] = useState(false);
+
+  const alerts = {
+    expiry: expiry.data?.summary || { expired: 0, critical: 0, warning: 0, total: 0 },
+    stock: stockAlerts.data?.summary || { out_of_stock: 0, critical: 0, low: 0, total: 0 }
+  };
+  const totalAlerts = alerts.expiry.total + alerts.stock.total;
 
   if (d.loading && !d.data) return <><PageHead icon="📊" title="Dashboard" sub="How the pharmacy is doing today" /><Spinner /></>;
   const x = d.data;
@@ -34,6 +44,28 @@ export default function Dashboard({ user, go }) {
   return (
     <>
       <PageHead icon="📊" title="Dashboard" sub="How the pharmacy is doing today">
+        <button className="btn" onClick={() => setShowNotifications(true)} style={{ marginRight: 10, position: 'relative' }}>
+          🔔 Alerts
+          {totalAlerts > 0 && (
+            <span style={{ 
+              position: 'absolute', 
+              top: -8, 
+              right: -8, 
+              background: '#ef4444', 
+              color: 'white', 
+              borderRadius: '50%', 
+              width: 24, 
+              height: 24, 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'center',
+              fontSize: 12,
+              fontWeight: 'bold'
+            }}>
+              {totalAlerts}
+            </span>
+          )}
+        </button>
         <button className="btn primary" onClick={() => go('sales')}>+ New Sale</button>
       </PageHead>
       <ErrorBox error={d.error} retry={d.reload} />
@@ -102,6 +134,7 @@ export default function Dashboard({ user, go }) {
           )}
         </>
       )}
+      {showNotifications && <NotificationCenter onClose={() => setShowNotifications(false)} />}
     </>
   );
 }
