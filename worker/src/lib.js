@@ -115,6 +115,20 @@ export class HttpError extends Error {
 }
 export const bad = (msg, extra) => new HttpError(400, msg, extra);
 export const str = (v, max = 200) => (v == null ? '' : String(v).trim().slice(0, max));
+export const sanitize = (v, max = 200) => {
+  if (v == null) return '';
+  // Remove HTML tags and dangerous characters
+  return String(v)
+    .trim()
+    .replace(/[<>\"'&]/g, (char) => ({
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#x27;',
+      '&': '&amp;'
+    }[char]))
+    .slice(0, max);
+};
 export const num = (v, def = 0) => {
   const n = Number(v);
   return Number.isFinite(n) ? n : def;
