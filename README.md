@@ -1,8 +1,22 @@
-# Pharmacy Standalone
+# 💊 Pharmacy Standalone
+
+![Status](https://img.shields.io/badge/status-production--ready-brightgreen) ![Commits](https://img.shields.io/badge/commits-41-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Responsive](https://img.shields.io/badge/responsive-mobile%20%26%20desktop-blueviolet)
 
 A complete pharmacy management system for a single Kenyan retail pharmacy: drug catalogue, batch and expiry stock, point of sale, sales history, controlled drugs register, suppliers, reports, staff roles and audit log.
 
 Built with React (Vite) for the screens and a Cloudflare Worker with a D1 database for the server. One deployment serves both.
+
+## ✨ Recent Updates (Nov 1, 2026)
+
+- ✅ Professional auth UI with Google Fonts
+- ✅ Complete mobile responsive design
+- ✅ Password reset via email
+- ✅ Color-coded notifications & alerts
+- ✅ Enhanced drug catalog with stock details
+- ✅ CSV & Excel export
+- ✅ Audit log viewer
+- ✅ Health monitoring
+- ✅ Security enhancements (rate limiting, XSS protection)
 
 ## What the pharmacy can do
 
