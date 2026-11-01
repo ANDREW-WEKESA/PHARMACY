@@ -7,11 +7,43 @@ import reports from './routes-reports.js';
 
 const app = new Hono();
 
-// Security headers + JSON API only
+// Rate limiting store (in-memory for demo, use KV in production)
+const rateLimitStore = new Map();
+
+// Security headers + JSON API only + Rate Limiting
 app.use('/api/*', async (c, next) => {
+  // Rate limiting: 100 requests per minute per IP
+  const ip = c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for') || 'unknown';
+  const now = Date.now();
+  const windowMs = 60 * 1000; // 1 minute
+  const maxRequests = 100;
+  
+  const key = `ratelimit:${ip}`;
+  const record = rateLimitStore.get(key) || { count: 0, resetTime: now + windowMs };
+  
+  if (now > record.resetTime) {
+    record.count = 1;
+    record.resetTime = now + windowMs;
+  } else {
+    record.count++;
+  }
+  
+  rateLimitStore.set(key, record);
+  
+  if (record.count > maxRequests) {
+    return c.json({ error: 'Too many requests. Please try again later.' }, 429);
+  }
+  
   await next();
+  
+  // Security headers
   c.header('X-Content-Type-Options', 'nosniff');
-  c.header('Cache-Control', 'no-store');
+  c.header('X-Frame-Options', 'DENY');
+  c.header('X-XSS-Protection', '1; mode=block');
+  c.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  c.header('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  c.header('Pragma', 'no-cache');
+  c.header('Expires', '0');
 });
 
 // BYPASS AUTH - Auto-login as admin user
