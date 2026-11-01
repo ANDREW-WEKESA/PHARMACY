@@ -9,6 +9,7 @@ import Sales from './pages/Sales.jsx';
 import Catalog from './pages/Catalog.jsx';
 import Reports from './pages/Reports.jsx';
 import Settings from './pages/Settings.jsx';
+import { AuditLog } from './pages/AuditLog.jsx';
 
 const NAV = [
   { id: 'dashboard', label: 'Dashboard', icon: '📊', roles: ['owner', 'pharmacist', 'cashier'], C: Dashboard },
@@ -16,6 +17,7 @@ const NAV = [
   { id: 'stock', label: 'Stock Management', icon: '📦', roles: ['owner', 'pharmacist', 'stock_clerk'], C: Stock },
   { id: 'catalog', label: 'Drug Catalog', icon: '📖', roles: ['owner', 'pharmacist', 'cashier', 'stock_clerk'], C: Catalog },
   { id: 'reports', label: 'Reports', icon: '🧾', roles: ['owner', 'pharmacist', 'cashier'], C: Reports },
+  { id: 'audit', label: 'Audit Log', icon: '📋', roles: ['owner'], C: AuditLog },
   { id: 'settings', label: 'Settings', icon: '⚙️', roles: ['owner', 'pharmacist', 'cashier', 'stock_clerk'], C: Settings },
 ];
 
