@@ -199,7 +199,9 @@ tr.clickable { cursor: pointer; }
   .g2, .g3, .g4, .form-grid { grid-template-columns: 1fr; }
   .pay-row { grid-template-columns: 1fr 1fr; }
   .toolbar select { width: 100%; }
-  .tabs button { font-size: 12px; padding: 7px 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; max-width: 100px; }
+  .tabs { overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tabs button { font-size: 11px; padding: 7px 11px; white-space: nowrap; flex-shrink: 0; }
 }
 
 /* ---------- Professional Auth Styles ---------- */
