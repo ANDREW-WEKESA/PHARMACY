@@ -199,6 +199,7 @@ tr.clickable { cursor: pointer; }
   .g2, .g3, .g4, .form-grid { grid-template-columns: 1fr; }
   .pay-row { grid-template-columns: 1fr 1fr; }
   .toolbar select { width: 100%; }
+  .tabs button { font-size: 12px; padding: 7px 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; max-width: 100px; }
 }
 
 /* ---------- Professional Auth Styles ---------- */
