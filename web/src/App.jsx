@@ -11,7 +11,9 @@ import Reports from './pages/Reports.jsx';
 import Settings from './pages/Settings.jsx';
 import { AuditLog } from './pages/AuditLog.jsx';
 import { PharmacyProvider } from './contexts/PharmacyContext.jsx';
+import { ThemeProvider } from './contexts/ThemeContext.jsx';
 import { PharmacySwitcher } from './components/PharmacySwitcher.jsx';
+import { ThemeToggle } from './components/ThemeToggle.jsx';
 import OwnerDashboard from './pages/OwnerDashboard.jsx';
 import PharmacyManagement from './pages/PharmacyManagement.jsx';
 import StaffManagement from './pages/StaffManagement.jsx';
@@ -71,8 +73,16 @@ export default function App() {
   if (boot.loading) return <div className="auth"><Spinner /></div>;
   if (boot.error) return <div className="auth"><div className="auth-card"><h1>Can't reach the server</h1><p>{boot.error}</p><button className="btn primary" onClick={() => location.reload()}>Try again</button></div></div>;
   // Show new professional auth page
-  if (!session) return <AuthNew onDone={onAuthed} needsSetup={boot.needsSetup} />;
-  return <Shell session={session} refreshSession={refreshSession} logout={logout} />;
+  if (!session) return (
+    <ThemeProvider>
+      <AuthNew onDone={onAuthed} needsSetup={boot.needsSetup} />
+    </ThemeProvider>
+  );
+  return (
+    <ThemeProvider>
+      <Shell session={session} refreshSession={refreshSession} logout={logout} />
+    </ThemeProvider>
+  );
 }
 
 function Shell({ session, refreshSession, logout }) {
@@ -104,14 +114,20 @@ function Shell({ session, refreshSession, logout }) {
             <div className="avatar">{initials}</div>
             <strong>{user.name}</strong>
             <small>{ROLE_LABEL[user.role]}</small>
-            <button className="btn" onClick={logout}>🚪 Logout</button>
+            <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
+              <button className="btn" onClick={logout} style={{ flex: 1 }}>🚪 Logout</button>
+              <ThemeToggle />
+            </div>
           </div>
         </aside>
         <main className="main">
           <div className="mobile-bar">
             <button onClick={() => setOpen(true)} aria-label="Open menu">☰</button>
             <span>{pharmacy.name}</span>
-            <PharmacySwitcher />
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <PharmacySwitcher />
+              <ThemeToggle />
+            </div>
           </div>
           <Cur key={page} user={user} pharmacy={pharmacy} go={go} refreshSession={refreshSession} />
         </main>
